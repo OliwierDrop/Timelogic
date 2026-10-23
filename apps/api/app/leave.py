@@ -3,13 +3,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .db import get_db
+from .employment import CONTRACT_EMPLOYMENT, employment_term_as_of
 from .models import Employee, LeaveBalance, LeaveRequest, LeaveType, User
 from .security import (
-    can_manage_employee,
     can_read_employee,
     current_user,
     employee_or_404,
@@ -21,6 +21,43 @@ from .security import (
 
 
 router = APIRouter(tags=["Nieobecności"])
+
+DEFAULT_LEAVE_TYPES = (
+    {"code": "op", "name": "Opieka nad dzieckiem", "category": "leave", "sort_order": 10, "allows_carry_over": True},
+    {"code": "um", "name": "Urlop macierzyński", "category": "leave", "sort_order": 20, "allows_carry_over": True},
+    {"code": "uo", "name": "Urlop ojcowski", "category": "leave", "sort_order": 30, "allows_carry_over": True},
+    {
+        "code": "ur2",
+        "name": "Urlop rodzicielski - drugi rodzic",
+        "category": "leave",
+        "sort_order": 40,
+        "allows_carry_over": True,
+    },
+    {
+        "code": "ur",
+        "name": "Urlop rodzicielski - pierwszy rodzic",
+        "category": "leave",
+        "sort_order": 50,
+        "allows_carry_over": True,
+    },
+    {"code": "uwy", "name": "Urlop wychowawczy", "category": "leave", "sort_order": 60, "allows_carry_over": True},
+    {"code": "uw", "name": "Urlop wypoczynkowy", "category": "leave", "sort_order": 70, "allows_carry_over": True},
+    {
+        "code": "uwz",
+        "name": "Urlop wypoczynkowy „na żądanie”",
+        "category": "leave",
+        "sort_order": 80,
+        "allows_carry_over": False,
+    },
+    {
+        "code": "zsw",
+        "name": "Zwolnienie od pracy z powodu działania siły wyższej",
+        "category": "leave",
+        "sort_order": 90,
+        "allows_carry_over": True,
+    },
+    {"code": "pz", "name": "Praca zdalna", "category": "custom", "sort_order": 10, "allows_carry_over": False},
+)
 
 
 def audit(db: Session, user: User, action: str, kind: str, target: UUID, detail=None):
@@ -37,8 +74,46 @@ def day_count(start: date, end: date) -> int:
     return (end - start).days + 1
 
 
+def ensure_org_leave_types(db: Session, organization_id: UUID) -> list[LeaveType]:
+    existing = {
+        row.code: row
+        for row in db.scalars(select(LeaveType).where(LeaveType.organization_id == organization_id)).all()
+    }
+    created = False
+    for spec in DEFAULT_LEAVE_TYPES:
+        if spec["code"] in existing:
+            continue
+        db.add(
+            LeaveType(
+                organization_id=organization_id,
+                code=spec["code"],
+                name=spec["name"],
+                category=spec["category"],
+                sort_order=spec["sort_order"],
+                allows_carry_over=spec["allows_carry_over"],
+            )
+        )
+        created = True
+    if created:
+        db.flush()
+    return list(
+        db.scalars(
+            select(LeaveType)
+            .where(LeaveType.organization_id == organization_id)
+            .order_by(LeaveType.category, LeaveType.sort_order, LeaveType.name, LeaveType.id)
+        ).all()
+    )
+
+
 def type_view(row: LeaveType):
-    return {"id": str(row.id), "code": row.code, "name": row.name}
+    return {
+        "id": str(row.id),
+        "code": row.code,
+        "name": row.name,
+        "category": row.category or "leave",
+        "sort_order": int(row.sort_order or 0),
+        "allows_carry_over": bool(row.allows_carry_over),
+    }
 
 
 def request_view(row: LeaveRequest):
@@ -71,17 +146,26 @@ def used_days(db: Session, employee_id: UUID, leave_type_id: UUID, year: int, ex
     return total
 
 
-def balance_view(db: Session, row: LeaveBalance):
+def balance_view(db: Session, row: LeaveBalance, leave_type: LeaveType | None = None):
     used = used_days(db, row.employee_id, row.leave_type_id, row.year)
     granted = float(row.granted_days)
+    unlimited = bool(row.unlimited)
+    leave_type = leave_type or db.get(LeaveType, row.leave_type_id)
     return {
         "id": str(row.id),
         "employee_id": str(row.employee_id),
         "leave_type_id": str(row.leave_type_id),
+        "leave_type_code": leave_type.code if leave_type else None,
+        "leave_type_name": leave_type.name if leave_type else None,
+        "category": (leave_type.category if leave_type else None) or "leave",
+        "allows_carry_over": bool(leave_type.allows_carry_over) if leave_type else False,
         "year": row.year,
         "granted_days": granted,
         "used_days": used,
-        "remaining_days": granted - used,
+        "remaining_days": None if unlimited else granted - used,
+        "unlimited": unlimited,
+        "carry_over": bool(row.carry_over),
+        "period": row.period,
     }
 
 
@@ -99,30 +183,62 @@ def overlapping_leave(
     return db.scalar(statement) is not None
 
 
+def assert_balance_allows(
+    db: Session,
+    employee_id: UUID,
+    leave_type_id: UUID,
+    year: int,
+    days: int,
+    exclude_id: UUID | None = None,
+):
+    balance = db.scalar(
+        select(LeaveBalance).where(
+            LeaveBalance.employee_id == employee_id,
+            LeaveBalance.leave_type_id == leave_type_id,
+            LeaveBalance.year == year,
+        )
+    )
+    if balance is None:
+        return
+    if balance.unlimited:
+        return
+    remaining = float(balance.granted_days) - used_days(
+        db, employee_id, leave_type_id, year, exclude_id=exclude_id
+    )
+    if days > remaining:
+        raise HTTPException(409, "Brak wystarczającego salda dni")
+
+
 @router.get("/leave-types")
 def list_types(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    rows = db.scalars(
-        select(LeaveType)
-        .where(LeaveType.organization_id == user.organization_id)
-        .order_by(LeaveType.name, LeaveType.id)
-    ).all()
+    rows = ensure_org_leave_types(db, user.organization_id)
+    db.commit()
     return [type_view(x) for x in rows]
 
 
 class LeaveTypeIn(BaseModel):
     code: str = Field(min_length=2, max_length=30, pattern=r"^[a-z0-9_-]+$")
     name: str = Field(min_length=2, max_length=120)
+    category: str = Field(default="leave", pattern=r"^(leave|custom)$")
 
 
 @router.post("/leave-types", status_code=201)
 def create_type(data: LeaveTypeIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     require_role(db, user, "admin", "hr")
+    ensure_org_leave_types(db, user.organization_id)
     code = data.code.strip().lower()
     if db.scalar(
         select(LeaveType.id).where(LeaveType.organization_id == user.organization_id, LeaveType.code == code)
     ):
         raise HTTPException(409, "Typ o tym kodzie już istnieje")
-    row = LeaveType(organization_id=user.organization_id, code=code, name=data.name.strip())
+    row = LeaveType(
+        organization_id=user.organization_id,
+        code=code,
+        name=data.name.strip(),
+        category=data.category,
+        sort_order=1000,
+        allows_carry_over=data.category == "leave",
+    )
     db.add(row)
     db.flush()
     audit(db, user, "leave.type.create", "leave_type", row.id)
@@ -158,6 +274,9 @@ class BalanceIn(BaseModel):
     leave_type_id: UUID
     year: int = Field(ge=2000, le=2100)
     granted_days: float = Field(ge=0, le=366)
+    unlimited: bool = False
+    carry_over: bool = False
+    period: str | None = Field(default=None, pattern=r"^(year|month)$")
 
 
 @router.post("/leave-balances", status_code=201)
@@ -171,6 +290,7 @@ def upsert_balance(data: BalanceIn, user: User = Depends(current_user), db: Sess
     )
     if not leave_type:
         raise HTTPException(422, "Nieprawidłowy typ nieobecności")
+    period = data.period if leave_type.category == "custom" and not data.unlimited else None
     row = db.scalar(
         select(LeaveBalance).where(
             LeaveBalance.employee_id == data.employee_id,
@@ -179,7 +299,10 @@ def upsert_balance(data: BalanceIn, user: User = Depends(current_user), db: Sess
         )
     )
     if row:
-        row.granted_days = data.granted_days
+        row.granted_days = 0 if data.unlimited else data.granted_days
+        row.unlimited = data.unlimited
+        row.carry_over = data.carry_over if leave_type.allows_carry_over else False
+        row.period = period
         audit(db, user, "leave.balance.update", "leave_balance", row.id)
     else:
         row = LeaveBalance(
@@ -187,13 +310,122 @@ def upsert_balance(data: BalanceIn, user: User = Depends(current_user), db: Sess
             employee_id=data.employee_id,
             leave_type_id=data.leave_type_id,
             year=data.year,
-            granted_days=data.granted_days,
+            granted_days=0 if data.unlimited else data.granted_days,
+            unlimited=data.unlimited,
+            carry_over=data.carry_over if leave_type.allows_carry_over else False,
+            period=period,
         )
         db.add(row)
         db.flush()
         audit(db, user, "leave.balance.create", "leave_balance", row.id)
     db.commit()
-    return balance_view(db, row)
+    return balance_view(db, row, leave_type)
+
+
+class RequestLimitIn(BaseModel):
+    leave_type_id: UUID | None = None
+    code: str | None = None
+    year: int = Field(ge=2000, le=2100)
+    granted_days: float = Field(default=0, ge=0, le=366)
+    unlimited: bool = False
+    carry_over: bool = False
+    period: str | None = Field(default=None, pattern=r"^(year|month)$")
+
+
+@router.get("/employees/{employee_id}/request-limits")
+def get_request_limits(
+    employee_id: UUID, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    employee_or_404(db, user, employee_id, manage=False)
+    types = ensure_org_leave_types(db, user.organization_id)
+    db.commit()
+    type_by_id = {row.id: row for row in types}
+    rows = db.scalars(
+        select(LeaveBalance)
+        .where(LeaveBalance.employee_id == employee_id)
+        .order_by(LeaveBalance.year, LeaveBalance.leave_type_id)
+    ).all()
+    leave_rows = []
+    custom_rows = []
+    leave_years: set[int] = set()
+    custom_years: set[int] = set()
+    for row in rows:
+        leave_type = type_by_id.get(row.leave_type_id) or db.get(LeaveType, row.leave_type_id)
+        if not leave_type:
+            continue
+        view = balance_view(db, row, leave_type)
+        if leave_type.category == "custom":
+            custom_rows.append(view)
+            custom_years.add(row.year)
+        else:
+            leave_rows.append(view)
+            leave_years.add(row.year)
+    return {
+        "leave_years": sorted(leave_years),
+        "custom_years": sorted(custom_years),
+        "leave": leave_rows,
+        "custom": custom_rows,
+        "types": [type_view(x) for x in types],
+    }
+
+
+@router.put("/employees/{employee_id}/request-limits")
+def put_request_limits(
+    employee_id: UUID,
+    data: list[RequestLimitIn],
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require_role(db, user, "admin", "hr")
+    employee_or_404(db, user, employee_id, manage=True)
+    types = ensure_org_leave_types(db, user.organization_id)
+    by_id = {row.id: row for row in types}
+    by_code = {row.code: row for row in types}
+    seen: set[tuple[UUID, int]] = set()
+    prepared: list[tuple[LeaveType, RequestLimitIn]] = []
+    for item in data:
+        leave_type = None
+        if item.leave_type_id:
+            leave_type = by_id.get(item.leave_type_id)
+        elif item.code:
+            leave_type = by_code.get(item.code.strip().lower())
+        if not leave_type:
+            raise HTTPException(422, "Nieprawidłowy typ wniosku")
+        key = (leave_type.id, item.year)
+        if key in seen:
+            raise HTTPException(422, "Powtórzony typ i rok w limitach")
+        seen.add(key)
+        prepared.append((leave_type, item))
+
+    db.execute(delete(LeaveBalance).where(LeaveBalance.employee_id == employee_id))
+    for leave_type, item in prepared:
+        unlimited = bool(item.unlimited)
+        carry_over = bool(item.carry_over) if leave_type.allows_carry_over else False
+        period = item.period if leave_type.category == "custom" and not unlimited else None
+        if leave_type.category == "custom" and not unlimited and period not in ("year", "month"):
+            period = "month"
+        db.add(
+            LeaveBalance(
+                organization_id=user.organization_id,
+                employee_id=employee_id,
+                leave_type_id=leave_type.id,
+                year=item.year,
+                granted_days=0 if unlimited else item.granted_days,
+                unlimited=unlimited,
+                carry_over=carry_over,
+                period=period,
+            )
+        )
+    audit(
+        db,
+        user,
+        "employee.request_limits",
+        "employee",
+        employee_id,
+        {"count": len(prepared)},
+    )
+    db.commit()
+    return get_request_limits(employee_id, user, db)
 
 
 @router.get("/leave-requests")
@@ -249,21 +481,17 @@ def create_request(data: LeaveRequestIn, user: User = Depends(current_user), db:
     )
     if not leave_type:
         raise HTTPException(422, "Nieprawidłowy typ nieobecności")
+    if (leave_type.category or "leave") == "leave":
+        term = employment_term_as_of(db, employee.id, data.start_date)
+        if not term or term.contract_type != CONTRACT_EMPLOYMENT:
+            raise HTTPException(
+                422,
+                "Wnioski urlopowe wymagają umowy o pracę obowiązującej w dniu rozpoczęcia",
+            )
     if overlapping_leave(db, employee.id, data.start_date, data.end_date):
         raise HTTPException(409, "Wniosek nakłada się na inną nieobecność")
     days = day_count(data.start_date, data.end_date)
-    year = data.start_date.year
-    balance = db.scalar(
-        select(LeaveBalance).where(
-            LeaveBalance.employee_id == employee.id,
-            LeaveBalance.leave_type_id == leave_type.id,
-            LeaveBalance.year == year,
-        )
-    )
-    if balance is not None:
-        remaining = float(balance.granted_days) - used_days(db, employee.id, leave_type.id, year)
-        if days > remaining:
-            raise HTTPException(409, "Brak wystarczającego salda dni")
+    assert_balance_allows(db, employee.id, leave_type.id, data.start_date.year, days)
     row = LeaveRequest(
         organization_id=user.organization_id,
         employee_id=employee.id,
@@ -303,21 +531,18 @@ def decide_request(
     if data.approve and overlapping_leave(db, row.employee_id, row.start_date, row.end_date, exclude_id=row.id):
         raise HTTPException(409, "Akceptacja koliduje z inną nieobecnością")
     if data.approve:
-        year = row.start_date.year
-        balance = db.scalar(
-            select(LeaveBalance).where(
-                LeaveBalance.employee_id == row.employee_id,
-                LeaveBalance.leave_type_id == row.leave_type_id,
-                LeaveBalance.year == year,
-            )
+        leave_type = db.get(LeaveType, row.leave_type_id)
+        if leave_type and (leave_type.category or "leave") == "leave":
+            term = employment_term_as_of(db, row.employee_id, row.start_date)
+            if not term or term.contract_type != CONTRACT_EMPLOYMENT:
+                raise HTTPException(
+                    422,
+                    "Wnioski urlopowe wymagają umowy o pracę obowiązującej w dniu rozpoczęcia",
+                )
+        days = day_count(row.start_date, row.end_date)
+        assert_balance_allows(
+            db, row.employee_id, row.leave_type_id, row.start_date.year, days, exclude_id=row.id
         )
-        if balance is not None:
-            days = day_count(row.start_date, row.end_date)
-            remaining = float(balance.granted_days) - used_days(
-                db, row.employee_id, row.leave_type_id, year, exclude_id=row.id
-            )
-            if days > remaining:
-                raise HTTPException(409, "Brak wystarczającego salda dni")
     row.status = "approved" if data.approve else "rejected"
     row.decided_by_id = user.id
     row.decided_at = now()

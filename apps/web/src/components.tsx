@@ -116,12 +116,18 @@ export function Modal({
   description?: string;
   onClose: () => void;
   footer?: ReactNode;
-  size?: "regular" | "wide" | "profile";
+  size?: "regular" | "wide" | "profile" | "a4";
   bare?: boolean;
   layer?: number;
 }>) {
   const sizeClass =
-    size === "wide" ? "dialog-wide" : size === "profile" ? "dialog-profile" : "";
+    size === "wide"
+      ? "dialog-wide"
+      : size === "profile"
+        ? "dialog-profile"
+        : size === "a4"
+          ? "dialog-a4"
+          : "";
   const layerClass = layer > 0 ? `dialog-layer-${Math.min(layer, 3)}` : "";
   return (
     <Dialog.Root

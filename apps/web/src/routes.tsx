@@ -6,6 +6,7 @@ import { CorrectionsPage } from "./pages/CorrectionsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LeavesPage } from "./pages/LeavesPage";
 import { LoginPage } from "./pages/LoginPage";
+import { ConfirmEmailPage } from "./pages/ConfirmEmailPage";
 import { PasswordPage } from "./pages/PasswordPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
@@ -19,6 +20,7 @@ export function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
       </Route>
       <Route path="/set-password" element={<PasswordPage />} />
+      <Route path="/confirm-email" element={<ConfirmEmailPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route index element={<DashboardPage />} />

@@ -40,6 +40,7 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"))
     email: Mapped[str] = mapped_column(String(320))
+    pending_email: Mapped[str | None] = mapped_column(String(320))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -94,6 +95,36 @@ class Employee(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     hired_on: Mapped[date | None] = mapped_column(Date)
     ended_on: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EmployeeEmploymentTerm(Base):
+    """Warunki zatrudnienia obowiązujące od daty (typ umowy + wymiar dzienny)."""
+
+    __tablename__ = "employee_employment_terms"
+    __table_args__ = (UniqueConstraint("employee_id", "effective_from"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
+    effective_from: Mapped[date] = mapped_column(Date)
+    contract_type: Mapped[str] = mapped_column(String(20), default="employment")
+    daily_minutes: Mapped[int] = mapped_column(Integer, default=480)
+
+
+class EmployeeDocument(Base):
+    """Dokument w kartotece pracownika."""
+
+    __tablename__ = "employee_documents"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
+    category: Mapped[str] = mapped_column(String(40))
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(String(500))
+    note: Mapped[str | None] = mapped_column(Text)
+    original_filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(120))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(512))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -245,6 +276,9 @@ class LeaveType(Base):
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"))
     code: Mapped[str] = mapped_column(String(30))
     name: Mapped[str] = mapped_column(String(120))
+    category: Mapped[str] = mapped_column(String(20), default="leave")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    allows_carry_over: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class LeaveBalance(Base):
@@ -256,6 +290,9 @@ class LeaveBalance(Base):
     leave_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("leave_types.id"))
     year: Mapped[int] = mapped_column(Integer)
     granted_days: Mapped[float] = mapped_column(Numeric(6, 2), default=0)
+    unlimited: Mapped[bool] = mapped_column(Boolean, default=False)
+    carry_over: Mapped[bool] = mapped_column(Boolean, default=False)
+    period: Mapped[str | None] = mapped_column(String(10))
 
 
 class LeaveRequest(Base):

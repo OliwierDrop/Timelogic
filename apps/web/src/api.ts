@@ -15,6 +15,14 @@ export type EmployeeTag = {
   color: string;
   is_informational: boolean;
 };
+export type ContractType = "employment" | "mandate" | "specific_task";
+export type EmploymentTerm = {
+  id?: string;
+  employee_id?: string;
+  effective_from: string;
+  contract_type: ContractType;
+  daily_minutes: number;
+};
 export type Employee = {
   id: string;
   employee_number: string;
@@ -27,6 +35,12 @@ export type Employee = {
   status: "active" | "invited" | "inactive";
   user_id: string | null;
   email: string | null;
+  pending_email?: string | null;
+  email_change?: {
+    pending_email: string;
+    email_sent: boolean;
+    confirm_url: string | null;
+  };
   roles: string[];
   supervisor_id: string | null;
   supervisor_name: string | null;
@@ -34,6 +48,7 @@ export type Employee = {
   tag_ids: string[];
   hired_on: string | null;
   ended_on: string | null;
+  current_contract_type?: ContractType | null;
 };
 export type Tag = {
   id: string;
@@ -81,15 +96,64 @@ export type ShiftTemplate = {
   start_minute: number;
   duration_minutes: number;
 };
-export type LeaveType = { id: string; code: string; name: string };
+export type LeaveType = {
+  id: string;
+  code: string;
+  name: string;
+  category: "leave" | "custom";
+  sort_order: number;
+  allows_carry_over: boolean;
+};
 export type LeaveBalance = {
   id: string;
   employee_id: string;
   leave_type_id: string;
+  leave_type_code?: string | null;
+  leave_type_name?: string | null;
+  category?: "leave" | "custom";
+  allows_carry_over?: boolean;
   year: number;
   granted_days: number;
   used_days: number;
-  remaining_days: number;
+  remaining_days: number | null;
+  unlimited: boolean;
+  carry_over: boolean;
+  period: "year" | "month" | null;
+};
+export type RequestLimits = {
+  leave_years: number[];
+  custom_years: number[];
+  leave: LeaveBalance[];
+  custom: LeaveBalance[];
+  types: LeaveType[];
+};
+export type RequestLimitInput = {
+  leave_type_id?: string;
+  code?: string;
+  year: number;
+  granted_days: number;
+  unlimited: boolean;
+  carry_over: boolean;
+  period: "year" | "month" | null;
+};
+export type DocumentCategory =
+  | "benefit"
+  | "certificate"
+  | "diploma"
+  | "employment_certificate"
+  | "contract"
+  | "other";
+export type EmployeeDocument = {
+  id: string;
+  employee_id: string;
+  category: DocumentCategory;
+  name: string;
+  description: string | null;
+  note: string | null;
+  original_filename: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string | null;
 };
 export type LeaveRequest = {
   id: string;
@@ -123,7 +187,11 @@ export async function api<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body) headers.set("Content-Type", "application/json");
+  const isForm =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body && !isForm && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   if (options.method && !["GET", "HEAD"].includes(options.method)) {
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
     if (path.includes("/time-entries"))
@@ -153,6 +221,67 @@ export const patch = <T>(path: string, data: unknown) =>
 export const put = <T>(path: string, data: unknown) =>
   api<T>(path, { method: "PUT", body: JSON.stringify(data) });
 export const del = (path: string) => api<void>(path, { method: "DELETE" });
+
+export function postForm<T>(path: string, form: FormData) {
+  return api<T>(path, { method: "POST", body: form });
+}
+
+async function fetchFileBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  const response = await fetch(`/api/v1${path}`, {
+    credentials: "same-origin",
+    headers,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new ApiError(
+      response.status,
+      error.message || "Nie udało się pobrać pliku",
+      error.fields || {},
+    );
+  }
+  return response.blob();
+}
+
+export async function downloadFile(path: string, filename: string) {
+  const blob = await fetchFileBlob(path);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function mimeFromFilename(name: string): string | null {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  return null;
+}
+
+/** Zwraca object URL — caller musi wywołać URL.revokeObjectURL. */
+export async function openFileUrl(
+  path: string,
+  filenameHint = "",
+): Promise<{
+  url: string;
+  contentType: string;
+}> {
+  const blob = await fetchFileBlob(path);
+  const hinted = mimeFromFilename(filenameHint);
+  const contentType = blob.type || hinted || "application/octet-stream";
+  const typed =
+    blob.type || !hinted ? blob : new Blob([blob], { type: hinted });
+  return {
+    url: URL.createObjectURL(typed),
+    contentType,
+  };
+}
 
 export function localDate(value: string) {
   return new Intl.DateTimeFormat("pl-PL", {

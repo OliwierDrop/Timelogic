@@ -34,8 +34,8 @@ export function LeavesPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
-  const [typeCode, setTypeCode] = useState("urlop");
-  const [typeName, setTypeName] = useState("Urlop wypoczynkowy");
+  const [typeCode, setTypeCode] = useState("");
+  const [typeName, setTypeName] = useState("");
   const [balanceEmployeeId, setBalanceEmployeeId] = useState("");
   const [balanceTypeId, setBalanceTypeId] = useState("");
   const [grantedDays, setGrantedDays] = useState("26");
@@ -182,7 +182,9 @@ export function LeavesPage() {
               <div className="balance-card" key={row.id}>
                 <strong>{typeNameOf(row.leave_type_id)}</strong>
                 <span>
-                  Pozostało <b>{row.remaining_days}</b> z {row.granted_days} dni
+                  {row.unlimited
+                    ? "Nielimitowany"
+                    : `Pozostało ${row.remaining_days} z ${row.granted_days} dni`}
                 </span>
                 <small>Wykorzystano {row.used_days}</small>
               </div>
