@@ -1,0 +1,34 @@
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+.local-admin.txt
+
+# Python
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+*.pyc
+*.pyo
+
+# Node / frontend build
+node_modules/
+dist/
+apps/web/dist/
+*.tsbuildinfo
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local tooling / agent artifacts
+.impeccable/
