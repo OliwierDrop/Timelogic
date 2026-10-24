@@ -1,6 +1,6 @@
 # Model danych
 
-Każda tabela domenowa zawiera `organization_id`. Relacje pracownik–użytkownik są opcjonalne. Klucze obce, unikalności organizacyjne i kontrola w transakcji zapobiegają połączeniom między organizacjami.
+Każda tabela domenowa zawiera `organization_id`. Członek zespołu (`employees`) ma powiązane konto (`users`) z e-mailem: logowanie, zaproszenie (konto bez hasła) i role żyją na `User`, a RCP/wnioski na `Employee`. Kolumna `employees.user_id` może być NULL tylko w danych legacy lub awaryjnych — API nie tworzy kart bez konta. Klucze obce, unikalności organizacyjne i kontrola w transakcji zapobiegają połączeniom między organizacjami.
 
 | Etap | Encje i relacje |
 | --- | --- |

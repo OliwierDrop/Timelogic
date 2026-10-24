@@ -1,0 +1,7 @@
+# Deprecated alias of compose.publish.yml (kompatybilność wsteczna).
+# Preferuj: scripts/compose.publish.yml
+
+services:
+  web:
+    ports: !override
+      - "8080:80"

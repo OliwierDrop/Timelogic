@@ -333,7 +333,8 @@ def resolve_account_for_employee(
     email: str | None,
     user_id: UUID | None,
     role: str | None,
-) -> UUID | None:
+) -> UUID:
+    """Zawsze zwraca id konta z e-mailem — członek zespołu nie może istnieć bez User."""
     if user_id and email:
         raise HTTPException(422, "Podaj e-mail albo istniejące konto — nie oba")
     if user_id:
@@ -341,7 +342,7 @@ def resolve_account_for_employee(
         check_unlinked_user(db, actor, user_id)
         return user_id
     if not email:
-        return None
+        raise HTTPException(422, "E-mail jest wymagany do założenia konta")
     address = email.strip().lower()
     existing = db.scalar(
         select(User).where(User.organization_id == actor.organization_id, User.email == address)
@@ -462,8 +463,6 @@ def create_employee(data: EmployeeIn, user: User = Depends(current_user), db: Se
         )
     ):
         raise HTTPException(409, "Numer pracownika już istnieje")
-    if not linked_user_id:
-        raise HTTPException(422, "E-mail jest wymagany do założenia konta")
     row = Employee(organization_id=user.organization_id, **values)
     db.add(row)
     db.flush()
@@ -546,8 +545,11 @@ def patch_employee(
     email_was_set = "email" in data.model_fields_set
     validate_employee_values(payload, row)
     payload = apply_position_fields(db, user, payload, create_missing=True)
-    check_links(db, user, payload.get("user_id"))
-    check_unlinked_user(db, user, payload.get("user_id"), row.id)
+    if "user_id" in payload:
+        if payload["user_id"] is None:
+            raise HTTPException(422, "Nie można odłączyć konta od karty pracownika")
+        check_links(db, user, payload["user_id"])
+        check_unlinked_user(db, user, payload["user_id"], row.id)
     if "supervisor_id" in payload:
         validate_supervisor(db, user, payload["supervisor_id"], row.id)
     before = employee_view(db, row, user)
@@ -556,9 +558,9 @@ def patch_employee(
     if tag_ids is not None:
         set_employee_tags(db, user, row.id, tag_ids)
     linked_user_id = payload.get("user_id", row.user_id)
+    if not linked_user_id:
+        raise HTTPException(422, "Karta pracownika wymaga powiązanego konta z e-mailem")
     if role is not None:
-        if not linked_user_id:
-            raise HTTPException(422, "Rola wymaga powiązanego konta")
         assign_user_role(db, user, linked_user_id, role)
     if payload.get("active") is False and row.user_id:
         if row.user_id == user.id:

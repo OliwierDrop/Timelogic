@@ -155,3 +155,27 @@ def test_create_employee_requires_email(seeded):
         assert missing.status_code == 422
 
 
+def test_patch_cannot_unlink_account(seeded):
+    with TestClient(app) as admin:
+        csrf = login(admin, "admin@example.com")
+        created = admin.post(
+            "/api/v1/employees",
+            json={
+                "first_name": "Ewa",
+                "last_name": "Konto",
+                "email": "ewa.konto@example.com",
+                "role": "employee",
+            },
+            headers=csrf,
+        )
+        assert created.status_code == 201, created.text
+        emp_id = created.json()["id"]
+        unlinked = admin.patch(
+            f"/api/v1/employees/{emp_id}",
+            json={"user_id": None},
+            headers=csrf,
+        )
+        assert unlinked.status_code == 422
+        assert "odłączyć" in str(unlinked.json()).lower()
+
+

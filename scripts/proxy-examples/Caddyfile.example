@@ -1,0 +1,6 @@
+# Przykład Caddy przed TimeLogic (tryb B — compose.proxy.yml).
+# Zamień rcp.example.com na swoją domenę (ta sama co PUBLIC_ORIGIN bez https://).
+
+rcp.example.com {
+	reverse_proxy 127.0.0.1:8080
+}

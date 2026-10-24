@@ -107,8 +107,10 @@ def login(data: LoginIn, response: Response, request: Request, db: Session = Dep
 
     from .main import audit
 
+    from .proxy import client_ip
+
     email = data.email.lower()
-    key = digest(email + ":" + (request.client.host if request.client else "unknown"))
+    key = digest(email + ":" + client_ip(request))
     recent = db.scalar(
         select(func.count())
         .select_from(LoginAttempt)

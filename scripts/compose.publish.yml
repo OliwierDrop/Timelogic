@@ -1,0 +1,7 @@
+# Tryb A — HTTP publicznie na porcie 8080 (LAN / test).
+# docker compose -f compose.yaml -f scripts/compose.publish.yml up -d
+
+services:
+  web:
+    ports: !override
+      - "8080:80"

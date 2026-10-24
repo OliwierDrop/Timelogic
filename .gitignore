@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 .local-admin.txt
+certs/
+!certs/.gitkeep
 
 # Python
 .venv/
