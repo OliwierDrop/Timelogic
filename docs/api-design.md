@@ -5,6 +5,7 @@ Prefiks `/api/v1`. Daty są ISO 8601 z offsetem, identyfikatory UUID. Odpowiedź
 | Zasób | Operacje |
 | --- | --- |
 | Auth | `POST /auth/login`, `/auth/login/2fa`, `/auth/logout`, `/auth/invite`, `/auth/reset-password`; `GET /auth/me` (profil + `security` + `preferences`); self-service: `PATCH /auth/me/profile`, `POST /auth/me/password`, `GET/PATCH /auth/me/preferences`, `POST /auth/me/2fa/totp/{setup,confirm,disable}`, `POST /auth/me/2fa/email/{setup,confirm,disable}` |
+| Organizacja | `GET/PATCH /organization` (nazwa, strefa); `GET/PUT /organization/mail`, `POST /organization/mail/test` — admin; SMTP w bazie (hasło nie wraca w GET) |
 | Pracownicy | `GET/POST /employees`, `GET/PATCH /employees/{id}`, `GET/POST /departments` |
 | RCP | `GET/POST /time-entries`, `POST /time-entries/{id}/stop`, `POST /time-entries/{id}/breaks`, `POST /time-entries/{id}/breaks/{break_id}/stop` |
 | Korekty | `GET/POST /attendance-corrections`, `POST /attendance-corrections/{id}/decision` |

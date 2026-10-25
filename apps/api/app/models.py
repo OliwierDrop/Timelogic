@@ -31,6 +31,12 @@ class Organization(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
     name: Mapped[str] = mapped_column(String(200))
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Warsaw")
+    smtp_host: Mapped[str | None] = mapped_column(String(255))
+    smtp_port: Mapped[int | None] = mapped_column(Integer)
+    smtp_from: Mapped[str | None] = mapped_column(String(320))
+    smtp_starttls: Mapped[bool] = mapped_column(Boolean, default=False)
+    smtp_user: Mapped[str | None] = mapped_column(String(320))
+    smtp_password_enc: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

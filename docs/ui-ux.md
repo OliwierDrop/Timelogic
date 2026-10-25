@@ -4,7 +4,7 @@ Tryb Operate: priorytetem są szybkie czynności, czytelność tabel i jednoznac
 
 ## Mapa ekranów
 
-Pulpit pokazuje bieżący status i zadania do rozpatrzenia. Mój czas zawiera zegar, przerwy, historię i wnioski o korektę. Pracownicy zawierają listę, filtry i profil. Grafiki: siatka pracownik×dzień (tydzień/miesiąc), lewy filtr, prawy panel dnia, typy grafiku, kreator zbiorczy i publikacja szkiców — [calendar-spec.md](calendar-spec.md). Wnioski mają listę, formularz, saldo i kolejkę decyzji; z komórki kalendarza można otworzyć wniosek z prefill. Raporty zawierają zakres dat, filtry i eksport. Administracja obejmuje działy, konta, role i audyt.
+Pulpit pokazuje bieżący status i zadania do rozpatrzenia. Mój czas zawiera zegar, przerwy, historię i wnioski o korektę. Pracownicy (Zespół) zawierają listę, filtry, profil, role i zaproszenia. Grafiki: siatka pracownik×dzień (tydzień/miesiąc), lewy filtr, prawy panel dnia, typy grafiku, kreator zbiorczy i publikacja szkiców — [calendar-spec.md](calendar-spec.md). Wnioski mają listę, formularz, saldo i kolejkę decyzji; z komórki kalendarza można otworzyć wniosek z prefill. Raporty zawierają zakres dat, filtry i eksport. Ustawienia organizacji (`/organizacja`, admin): nazwa, strefa, SMTP i audyt.
 
 ## Shell aplikacji
 
@@ -12,9 +12,10 @@ Układ Operate (wzorce z inEwi, własny wygląd TimeLogic):
 
 1. **Górna nawigacja** — brand, moduły (role-gated), kompaktowy RCP (status + Start/Przerwa/Stop), menu konta (avatar + imię).
 2. **Ustawienia konta (`/konto`)** — zakładki: Profil (imię/nazwisko/telefon/e-mail), Zabezpieczenia (TOTP + kod e-mail), Hasło, Preferencje (12h/24h, format daty, początek tygodnia, motyw jasny/ciemny/system).
-3. **Lewy panel filtrów** — na listach i grafiku (okres, wyszukiwanie, status); na mobile jako drawer.
-4. **Nagłówek modułu** — tytuł, okres/nawigacja (tydzień lub miesiąc), akcje (Dodaj, Publikuj, Akcje).
-5. **Create/edit wyłącznie w modalu** — bez formularzy wklejonych pod listą; klik w komórkę otwiera panel dnia, a „+ Grafik” / kreator — modal.
+3. **Ustawienia organizacji (`/organizacja`, admin)** — zakładki: Organizacja (nazwa, strefa), Poczta (SMTP + test), Audyt. Konta i zaproszenia są w Zespole.
+4. **Lewy panel filtrów** — na listach i grafiku (okres, wyszukiwanie, status); na mobile jako drawer.
+5. **Nagłówek modułu** — tytuł, okres/nawigacja (tydzień lub miesiąc), akcje (Dodaj, Publikuj, Akcje).
+6. **Create/edit wyłącznie w modalu** — bez formularzy wklejonych pod listą; klik w komórkę otwiera panel dnia, a „+ Grafik” / kreator — modal.
 
 Na telefonie RCP i najważniejsze akcje zostają w zasięgu; pozostałe moduły w menu. Wszystkie ekrany definiują stany: ładowanie, pusto, błąd, sukces, konflikt i brak uprawnienia.
 

@@ -130,6 +130,8 @@ def request_email_change(db: Session, actor: User, employee: Employee, email: st
     url = email_confirm_url(token)
 
     sent = send_mail(
+        db,
+        actor.organization_id,
         address,
         "Potwierdź zmianę e-maila — TimeLogic",
         url,
@@ -368,7 +370,13 @@ def resolve_account_for_employee(
 
     token = issue_invite_token(db, invited.id)
     audit(db, actor, "auth.invite", "user", invited.id, {"role": role_code, "via": "employee.create"})
-    send_mail(address, "Zaproszenie do TimeLogic", invite_set_password_url(token))
+    send_mail(
+        db,
+        actor.organization_id,
+        address,
+        "Zaproszenie do TimeLogic",
+        invite_set_password_url(token),
+    )
     return invited.id
 
 
@@ -500,7 +508,7 @@ def resend_employee_invite(
     url = invite_set_password_url(token)
     audit(db, user, "auth.invite.resend", "user", linked.id, {"employee_id": str(row.id)})
     db.commit()
-    sent = send_mail(linked.email, "Zaproszenie do TimeLogic", url)
+    sent = send_mail(db, user.organization_id, linked.email, "Zaproszenie do TimeLogic", url)
     return {"ok": True, "email_sent": sent, "invite_url": None if sent else url}
 
 

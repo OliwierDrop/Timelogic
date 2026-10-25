@@ -84,7 +84,7 @@ export function UserMenu({ user }: { user: User }) {
           </Link>
           {isAdmin ? (
             <Link
-              to="/admin"
+              to="/organizacja"
               className="user-menu-item"
               role="menuitem"
               onClick={() => setOpen(false)}

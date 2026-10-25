@@ -9,6 +9,7 @@ os.environ["DATABASE_URL"] = os.getenv(
     "postgresql+psycopg://timelogic:change-this-local-password@localhost:55432/timelogic_test",
 )
 os.environ["COOKIE_SECURE"] = "false"
+os.environ.setdefault("APP_SECRET", "test-app-secret-for-smtp")
 os.environ.setdefault("UPLOAD_DIR", tempfile.mkdtemp(prefix="timelogic-uploads-"))
 assert os.environ["DATABASE_URL"].endswith("/timelogic_test"), "Tests must use timelogic_test"
 

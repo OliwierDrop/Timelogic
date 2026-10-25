@@ -1,8 +1,6 @@
 import os
 import secrets
-import smtplib
 from datetime import timedelta
-from email.message import EmailMessage
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -11,6 +9,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .db import get_db
+from .mail_settings import send_mail
 from .models import AuthToken, Role, Session as LoginSession, User, UserRole
 from .security import (
     current_user,
@@ -247,33 +246,6 @@ def logout(request: Request, response: Response, user: User = Depends(current_us
     return {"ok": True}
 
 
-def send_mail(to: str, subject: str, url: str, *, body: str | None = None):
-    host = os.getenv("SMTP_HOST")
-    if not host:
-        return False
-    message = EmailMessage()
-    message["From"] = os.getenv("SMTP_FROM", "timelogic@localhost")
-    message["To"] = to
-    message["Subject"] = subject
-    message.set_content(
-        body
-        or (
-            "Zostałeś zaproszony do TimeLogic.\n\n"
-            "Ustaw hasło pod poniższym linkiem (ważny 7 dni). "
-            "Hasło wpiszesz dwukrotnie, aby uniknąć pomyłki.\n\n"
-            f"{url}\n\n"
-            "Po zapisaniu hasła przejdziesz do strony logowania.\n"
-        )
-    )
-    with smtplib.SMTP(host, int(os.getenv("SMTP_PORT", "25")), timeout=10) as smtp:
-        if os.getenv("SMTP_STARTTLS") == "true":
-            smtp.starttls()
-        if os.getenv("SMTP_USER"):
-            smtp.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
-        smtp.send_message(message)
-    return True
-
-
 def email_change_mail_body(url: str) -> str:
     return (
         "Otrzymaliśmy prośbę o zmianę adresu e-mail w TimeLogic.\n\n"
@@ -311,7 +283,7 @@ def invite(data: InviteIn, user: User = Depends(current_user), db: Session = Dep
     audit(db, user, "auth.invite", "user", invited.id, {"role": data.role})
     db.commit()
     url = f"{public_origin()}/set-password?token={token}"
-    sent = send_mail(email, "Zaproszenie do TimeLogic", url)
+    sent = send_mail(db, user.organization_id, email, "Zaproszenie do TimeLogic", url)
     return {"id": str(invited.id), "email_sent": sent, "invite_url": None if sent else url}
 
 
@@ -413,19 +385,28 @@ class ResetRequest(BaseModel):
 @router.post("/request-reset")
 def request_reset(data: ResetRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == data.email.lower(), User.is_active.is_(True)))
-    if user and os.getenv("SMTP_HOST"):
-        token = secrets.token_urlsafe(32)
-        db.add(
-            AuthToken(
-                user_id=user.id, purpose="reset", token_hash=digest(token), expires_at=now() + timedelta(minutes=30)
+    if user:
+        from .mail_settings import get_organization
+
+        org = get_organization(db, user.organization_id)
+        if org and org.smtp_host:
+            token = secrets.token_urlsafe(32)
+            db.add(
+                AuthToken(
+                    user_id=user.id,
+                    purpose="reset",
+                    token_hash=digest(token),
+                    expires_at=now() + timedelta(minutes=30),
+                )
             )
-        )
-        db.commit()
-        send_mail(
-            user.email,
-            "Reset hasła TimeLogic",
-            f"{public_origin()}/set-password?mode=reset&token={token}",
-        )
+            db.commit()
+            send_mail(
+                db,
+                user.organization_id,
+                user.email,
+                "Reset hasła TimeLogic",
+                f"{public_origin()}/set-password?mode=reset&token={token}",
+            )
     return {"ok": True}
 
 
@@ -470,7 +451,9 @@ def confirm_email(data: ConfirmEmailIn, db: Session = Depends(get_db)):
     if user.password_hash is None:
         invite_token = issue_invite_token(db, user.id)
         invite_url = invite_set_password_url(invite_token)
-        invite_sent = send_mail(pending, "Zaproszenie do TimeLogic", invite_url)
+        invite_sent = send_mail(
+            db, user.organization_id, pending, "Zaproszenie do TimeLogic", invite_url
+        )
     db.commit()
     return {
         "ok": True,

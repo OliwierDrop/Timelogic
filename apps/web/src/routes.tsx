@@ -3,7 +3,7 @@ import { GuestOnly, RequireAuth } from "./auth/RequireAuth";
 import { RequireRole } from "./auth/RequireRole";
 import { AppShell } from "./layout/AppShell";
 import { AccountPage } from "./pages/AccountPage";
-import { AdminPage } from "./pages/AdminPage";
+import { OrgSettingsPage } from "./pages/OrgSettingsPage";
 import { CorrectionsPage } from "./pages/CorrectionsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LeavesPage } from "./pages/LeavesPage";
@@ -36,7 +36,8 @@ export function AppRoutes() {
             <Route path="raporty" element={<ReportsPage />} />
           </Route>
           <Route element={<RequireRole roles={["admin"]} />}>
-            <Route path="admin" element={<AdminPage />} />
+            <Route path="organizacja" element={<OrgSettingsPage />} />
+            <Route path="admin" element={<Navigate to="/organizacja" replace />} />
           </Route>
         </Route>
       </Route>

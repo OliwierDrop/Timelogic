@@ -97,7 +97,8 @@ Wzór: [`.env.example`](.env.example)
 | `PUBLIC_ORIGIN` | Dokładny publiczny URL przeglądarki (origin CSRF), np. `https://rcp.firma.pl` |
 | `COOKIE_SECURE` | `false` lokalnie, `true` przy HTTPS |
 | `TRUSTED_PROXIES` | Lista IP/CIDR zaufanego proxy; wtedy `X-Forwarded-For` wpływa na limit logowań |
-| `SMTP_*` | Opcjonalnie — bez SMTP link zaproszenia wraca w odpowiedzi API / UI |
+| `APP_SECRET` | Tajny klucz do szyfrowania hasła SMTP w bazie (zalecane w produkcji) |
+| `SMTP_*` | Opcjonalny seed przy pierwszym odczycie; potem edycja w UI (`/organizacja` → Poczta). Bez SMTP link zaproszenia wraca w API/UI |
 | `BOOTSTRAP_EMAIL` / `BOOTSTRAP_PASSWORD` | Pierwszy admin (min. 12 znaków hasła); bootstrap zakłada też kartę w Zespole |
 | `BOOTSTRAP_ORGANIZATION` | Nazwa organizacji (domyślnie „Moja organizacja”) |
 | `BOOTSTRAP_FIRST_NAME` / `BOOTSTRAP_LAST_NAME` | Imię i nazwisko na karcie admina (domyślnie Administrator / System) |

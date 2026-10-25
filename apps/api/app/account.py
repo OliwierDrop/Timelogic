@@ -125,6 +125,8 @@ def _issue_email_otp(db: Session, user: User, *, purpose: str, subject: str) -> 
         )
     )
     sent = send_mail(
+        db,
+        user.organization_id,
         user.email,
         subject,
         code,
