@@ -1,10 +1,10 @@
 import {
-  Activity,
   BarChart3,
   CalendarClock,
   CalendarDays,
   Clock3,
   FileText,
+  Home,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -30,7 +30,7 @@ export type NavItem = {
 
 /** Brak `roles` = dostępne dla każdego zalogowanego. */
 export const NAV_ITEMS: NavItem[] = [
-  { path: "/", label: "Pulpit", icon: Activity },
+  { path: "/", label: "", icon: Home },
   { path: "/czas", label: "Mój czas", icon: Clock3 },
   {
     path: "/pracownicy",
@@ -38,7 +38,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Users,
     roles: ["manager", "hr", "admin"],
   },
-  { path: "/grafiki", label: "Grafiki", icon: CalendarDays },
+  { path: "/grafiki", label: "Kalendarz", icon: CalendarDays },
   { path: "/wnioski", label: "Wnioski", icon: FileText },
   {
     path: "/korekty",

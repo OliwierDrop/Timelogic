@@ -43,7 +43,27 @@ class User(Base):
     pending_email: Mapped[str | None] = mapped_column(String(320))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    totp_secret: Mapped[str | None] = mapped_column(String(64))
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    email_otp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserPreferences(Base):
+    __tablename__ = "user_preferences"
+    __table_args__ = (
+        CheckConstraint("time_format IN ('h24', 'h12')", name="user_pref_time_format"),
+        CheckConstraint("date_format IN ('dmy', 'ymd', 'mdy')", name="user_pref_date_format"),
+        CheckConstraint("week_starts_on IN ('monday', 'sunday')", name="user_pref_week_starts"),
+        CheckConstraint("theme IN ('system', 'light', 'dark')", name="user_pref_theme"),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    time_format: Mapped[str] = mapped_column(String(8), default="h24")
+    date_format: Mapped[str] = mapped_column(String(8), default="dmy")
+    week_starts_on: Mapped[str] = mapped_column(String(16), default="monday")
+    theme: Mapped[str] = mapped_column(String(16), default="system")
 
 
 class Role(Base):

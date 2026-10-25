@@ -49,9 +49,11 @@ import {
   valuesFromShift,
 } from "./schedules/ShiftFormModal";
 import { useScheduleMutations } from "./schedules/useScheduleMutations";
+import { usePreferences } from "../preferences/PreferencesContext";
 
 export function SchedulesPage() {
   const { user } = useOutletContext<{ user: User }>();
+  const { preferences } = usePreferences();
   const canPlan = user.roles.some((r) =>
     ["manager", "hr", "admin"].includes(r),
   );
@@ -77,7 +79,9 @@ export function SchedulesPage() {
   const [leaveReason, setLeaveReason] = useState("");
 
   const rangeStart =
-    mode === "week" ? startOfWeek(anchor, "monday") : startOfMonth(anchor);
+    mode === "week"
+      ? startOfWeek(anchor, preferences.week_starts_on)
+      : startOfMonth(anchor);
   const days = daysInRange(mode, rangeStart);
   const rangeEnd = addDays(days[days.length - 1], 1);
   const fromIso = rangeStart.toISOString();
@@ -269,7 +273,7 @@ export function SchedulesPage() {
           setMode(value);
           setAnchor((current) =>
             value === "week"
-              ? startOfWeek(current, "monday")
+              ? startOfWeek(current, preferences.week_starts_on)
               : startOfMonth(current),
           );
         }}

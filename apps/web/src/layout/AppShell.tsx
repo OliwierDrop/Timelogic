@@ -5,9 +5,8 @@ import {
   useLocation,
   useOutletContext,
 } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { LogOut, Menu, X } from "lucide-react";
-import { post, setCsrf, type User } from "../api";
+import { Menu, X } from "lucide-react";
+import type { User } from "../api";
 import { navForUser, pathShowsFilters } from "../auth/roles";
 import { FilterSidebar } from "./FilterSidebar";
 import {
@@ -15,6 +14,7 @@ import {
   useFilterSidebarContent,
 } from "./filterSidebarContext";
 import { RcpClock } from "./RcpClock";
+import { UserMenu } from "./UserMenu";
 
 export function AppShell() {
   return (
@@ -27,21 +27,11 @@ export function AppShell() {
 function AppShellInner() {
   const { user } = useOutletContext<{ user: User }>();
   const location = useLocation();
-  const client = useQueryClient();
   const [mobileNav, setMobileNav] = useState(false);
   const items = navForUser(user);
   const filterContent = useFilterSidebarContent();
   const showFilters =
     pathShowsFilters(location.pathname) || filterContent != null;
-
-  const logout = useMutation({
-    mutationFn: () => post("/auth/logout", {}),
-    onSuccess: () => {
-      setCsrf(null);
-      client.clear();
-      window.location.assign("/login");
-    },
-  });
 
   return (
     <div className="app-shell">
@@ -64,30 +54,21 @@ function AppShellInner() {
                 key={item.path}
                 to={item.path}
                 end={item.path === "/"}
+                aria-label={item.label || "Strona główna"}
+                title={item.label || "Strona główna"}
                 className={({ isActive }) =>
-                  `topnav-link ${isActive ? "active" : ""}`
+                  `topnav-link ${isActive ? "active" : ""}${item.label ? "" : " icon-only"}`
                 }
               >
                 <item.icon size={16} strokeWidth={1.9} />
-                {item.label}
+                {item.label || null}
               </NavLink>
             ))}
           </nav>
         </div>
         <div className="topnav-right">
           <RcpClock user={user} />
-          <div className="topbar-user">
-            <span className="avatar">{user.email[0].toUpperCase()}</span>
-            <span className="user-email">{user.email}</span>
-            <button
-              className="icon-button"
-              title="Wyloguj"
-              aria-label="Wyloguj"
-              onClick={() => logout.mutate()}
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
+          <UserMenu user={user} />
         </div>
       </header>
       {mobileNav && (
@@ -115,13 +96,14 @@ function AppShellInner() {
                   key={item.path}
                   to={item.path}
                   end={item.path === "/"}
+                  aria-label={item.label || "Strona główna"}
                   className={({ isActive }) =>
                     `nav-item ${isActive ? "active" : ""}`
                   }
                   onClick={() => setMobileNav(false)}
                 >
                   <item.icon size={19} strokeWidth={1.8} />
-                  <span>{item.label}</span>
+                  {item.label ? <span>{item.label}</span> : null}
                 </NavLink>
               ))}
             </nav>
@@ -131,7 +113,9 @@ function AppShellInner() {
       <div className={`app-body ${showFilters ? "with-filters" : ""}`}>
         {showFilters && <FilterSidebar>{filterContent}</FilterSidebar>}
         <main id="content" className="page">
-          <Outlet context={{ user }} />
+          <div className="page-width">
+            <Outlet context={{ user }} />
+          </div>
         </main>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { setCsrf, type Me } from "../api";
+import { PreferencesProvider } from "../preferences/PreferencesContext";
 import { useMe } from "./useMe";
 
 export function RequireAuth() {
@@ -22,7 +23,11 @@ export function RequireAuth() {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  return <Outlet context={{ user: me.data.user, me: me.data }} />;
+  return (
+    <PreferencesProvider initial={me.data.user.preferences}>
+      <Outlet context={{ user: me.data.user, me: me.data }} />
+    </PreferencesProvider>
+  );
 }
 
 export function GuestOnly() {

@@ -38,6 +38,9 @@ export function EmployeeEditor({
   isAdmin,
   selectTagId,
   onAddTag,
+  onManageTags,
+  onAddPosition,
+  onManagePositions,
   onClose,
   onSaved,
 }: {
@@ -49,6 +52,9 @@ export function EmployeeEditor({
   isAdmin: boolean;
   selectTagId: string | null;
   onAddTag: () => void;
+  onManageTags: () => void;
+  onAddPosition: () => void;
+  onManagePositions: () => void;
   onClose: () => void;
   onSaved: (row: Employee) => void;
 }) {
@@ -582,7 +588,30 @@ export function EmployeeEditor({
                       />
                     </div>
                   </Field>
-                  <Field label="Stanowisko domyślne">
+                  <Field
+                    label={
+                      <span className="field-label-row">
+                        Stanowisko domyślne
+                        <span className="field-label-actions">
+                          <button
+                            type="button"
+                            className="filter-link"
+                            onClick={onAddPosition}
+                          >
+                            Dodaj
+                          </button>
+                          <span className="subtle"> albo </span>
+                          <button
+                            type="button"
+                            className="filter-link"
+                            onClick={onManagePositions}
+                          >
+                            Zarządzaj
+                          </button>
+                        </span>
+                      </span>
+                    }
+                  >
                     <select
                       value={positionId}
                       onChange={(e) => setPositionId(e.target.value)}
@@ -599,13 +628,23 @@ export function EmployeeEditor({
                     label={
                       <span className="field-label-row">
                         Tagi
-                        <button
-                          type="button"
-                          className="filter-link"
-                          onClick={onAddTag}
-                        >
-                          Dodaj
-                        </button>
+                        <span className="field-label-actions">
+                          <button
+                            type="button"
+                            className="filter-link"
+                            onClick={onAddTag}
+                          >
+                            Dodaj
+                          </button>
+                          <span className="subtle"> albo </span>
+                          <button
+                            type="button"
+                            className="filter-link"
+                            onClick={onManageTags}
+                          >
+                            Zarządzaj
+                          </button>
+                        </span>
                       </span>
                     }
                   >
@@ -642,6 +681,9 @@ export function EmployeeEditor({
                           </label>
                         );
                       })}
+                      {!tags.length && (
+                        <span className="subtle">Wybierz lub dodaj nowe</span>
+                      )}
                     </div>
                   </Field>
                   {isAdmin && employee.user_id ? (

@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { GuestOnly, RequireAuth } from "./auth/RequireAuth";
 import { RequireRole } from "./auth/RequireRole";
 import { AppShell } from "./layout/AppShell";
+import { AccountPage } from "./pages/AccountPage";
+import { AdminPage } from "./pages/AdminPage";
 import { CorrectionsPage } from "./pages/CorrectionsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LeavesPage } from "./pages/LeavesPage";
@@ -27,10 +29,14 @@ export function AppRoutes() {
           <Route path="czas" element={<TimePage />} />
           <Route path="grafiki" element={<SchedulesPage />} />
           <Route path="wnioski" element={<LeavesPage />} />
+          <Route path="konto" element={<AccountPage />} />
           <Route element={<RequireRole roles={["manager", "hr", "admin"]} />}>
             <Route path="pracownicy" element={<TeamPage />} />
             <Route path="korekty" element={<CorrectionsPage />} />
             <Route path="raporty" element={<ReportsPage />} />
+          </Route>
+          <Route element={<RequireRole roles={["admin"]} />}>
+            <Route path="admin" element={<AdminPage />} />
           </Route>
         </Route>
       </Route>

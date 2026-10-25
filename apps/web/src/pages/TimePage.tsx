@@ -47,10 +47,7 @@ export function TimePage() {
   });
   return (
     <>
-      <PageHeading
-        title="Mój czas"
-        description="Rejestruj pracę i przerwy. Wszystkie godziny pokazujemy według strefy Europe/Warsaw."
-      />
+      <PageHeading title="Mój czas" />
       <Panel className="clock-panel">
         <div className="clock-main">
           <div className="clock-face">

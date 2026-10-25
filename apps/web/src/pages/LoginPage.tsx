@@ -13,6 +13,19 @@ const loginSchema = z.object({
   password: z.string().min(1, "Podaj hasło"),
 });
 type LoginValues = z.infer<typeof loginSchema>;
+
+type LoginResult =
+  | Me
+  | {
+      requires_2fa: true;
+      challenge_token: string;
+      methods: string[];
+    };
+
+function isMe(value: LoginResult): value is Me {
+  return "user" in value && "csrf_token" in value;
+}
+
 export function LoginPage() {
   const { onLogin } = useOutletContext<{ onLogin: (data: Me) => void }>();
   const {
@@ -20,15 +33,42 @@ export function LoginPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
-  const login = useMutation({
-    mutationFn: (data: LoginValues) => post<Me>("/auth/login", data),
-    onSuccess: onLogin,
-  });
   const [resetMode, setResetMode] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
+  const [challenge, setChallenge] = useState<{
+    token: string;
+    methods: string[];
+  } | null>(null);
+  const [otp, setOtp] = useState("");
+
+  const login = useMutation({
+    mutationFn: (data: LoginValues) => post<LoginResult>("/auth/login", data),
+    onSuccess: (result) => {
+      if (isMe(result)) {
+        onLogin(result);
+        return;
+      }
+      setChallenge({
+        token: result.challenge_token,
+        methods: result.methods || [],
+      });
+      setOtp("");
+    },
+  });
+
+  const verify2fa = useMutation({
+    mutationFn: () =>
+      post<Me>("/auth/login/2fa", {
+        challenge_token: challenge!.token,
+        code: otp,
+      }),
+    onSuccess: onLogin,
+  });
+
   const reset = useMutation({
     mutationFn: () => post("/auth/request-reset", { email: resetEmail }),
   });
+
   return (
     <div className="auth-layout">
       <div className="auth-intro">
@@ -80,6 +120,49 @@ export function LoginPage() {
                 </Message>
               )}
               <button className="text-link" onClick={() => setResetMode(false)}>
+                Wróć do logowania
+              </button>
+            </>
+          ) : challenge ? (
+            <>
+              <h2>Weryfikacja dwuetapowa</h2>
+              <p>
+                {challenge.methods.includes("email") &&
+                challenge.methods.includes("totp")
+                  ? "Podaj kod z aplikacji lub z wiadomości e-mail."
+                  : challenge.methods.includes("email")
+                    ? "Podaj kod wysłany na Twój e-mail."
+                    : "Podaj kod z aplikacji uwierzytelniającej."}
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  verify2fa.mutate();
+                }}
+              >
+                <Field label="Kod">
+                  <input
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    required
+                  />
+                </Field>
+                {verify2fa.isError && (
+                  <Message>{(verify2fa.error as ApiError).message}</Message>
+                )}
+                <Button busy={verify2fa.isPending} type="submit">
+                  Potwierdź <ArrowRight size={17} />
+                </Button>
+              </form>
+              <button
+                className="text-link"
+                onClick={() => {
+                  setChallenge(null);
+                  setOtp("");
+                }}
+              >
                 Wróć do logowania
               </button>
             </>

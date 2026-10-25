@@ -281,6 +281,19 @@
   color: var(--accent);
   background: transparent;
 }
+.role-badge.role-employee {
+  border-color: #94a3b8;
+  color: #64748b;
+}
+.role-badge.role-manager {
+  border-color: #eab308;
+  color: #a16207;
+}
+.role-badge.role-hr,
+.role-badge.role-admin {
+  border-color: #38bdf8;
+  color: #0369a1;
+}
 .tag-badge {
   background: var(--surface-soft);
   color: var(--ink);

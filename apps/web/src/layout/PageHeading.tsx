@@ -2,18 +2,25 @@ import type { ReactNode } from "react";
 
 export function PageHeading({
   title,
-  description,
+  titleAside,
+  meta,
   action,
 }: {
   title: string;
-  description: string;
+  /** @deprecated Descriptions under page titles are no longer shown. */
+  description?: string;
+  titleAside?: ReactNode;
+  meta?: ReactNode;
   action?: ReactNode;
 }) {
   return (
     <div className="page-heading">
       <div>
-        <h1>{title}</h1>
-        <p>{description}</p>
+        <div className="page-heading-title-row">
+          <h1>{title}</h1>
+          {titleAside}
+        </div>
+        {meta}
       </div>
       {action}
     </div>

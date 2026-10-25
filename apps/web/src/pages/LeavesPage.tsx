@@ -150,7 +150,6 @@ export function LeavesPage() {
     <>
       <PageHeading
         title="Wnioski"
-        description="Nieobecności, salda urlopowe i kolejka decyzji."
         action={
           <div className="heading-actions">
             {canConfigure && (

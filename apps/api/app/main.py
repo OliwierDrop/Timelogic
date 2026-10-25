@@ -86,9 +86,10 @@ def audit_logs(limit: int = 50, user: User = Depends(current_user), db: Session 
     ]
 
 
-from . import auth, catalog, documents, employees, leave, rcp, shifts  # noqa: E402
+from . import account, auth, catalog, documents, employees, leave, rcp, shifts  # noqa: E402
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(account.router, prefix="/api/v1")
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(employees.router, prefix="/api/v1")
 app.include_router(rcp.router, prefix="/api/v1")

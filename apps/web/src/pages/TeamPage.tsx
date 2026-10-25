@@ -15,6 +15,7 @@ import {
 } from "../api";
 import { Button, Empty, Field, Message, Modal } from "../components";
 import { ManageCatalogModal } from "../layout/ManageCatalogModal";
+import { PageHeading } from "../layout/PageHeading";
 import { TagFormModal } from "../layout/TagFormModal";
 import { useSetFilterSidebar } from "../layout/filterSidebarContext";
 import { DEFAULT_TAG_COLOR } from "../tags";
@@ -230,17 +231,16 @@ export function TeamPage() {
 
   return (
     <>
-      <div className="team-heading">
-        <div>
-          <h1>Twój zespół ({count})</h1>
-          <p className="subtle">Karty pracowników, role i tagi.</p>
-        </div>
-        {canEdit && (
-          <Button onClick={() => setShowForm(true)}>
-            <Plus size={16} /> Dodaj
-          </Button>
-        )}
-      </div>
+      <PageHeading
+        title={`Twój zespół (${count})`}
+        action={
+          canEdit ? (
+            <Button onClick={() => setShowForm(true)}>
+              <Plus size={16} /> Dodaj
+            </Button>
+          ) : undefined
+        }
+      />
 
       {employees.isPending ? (
         <p className="subtle">Ładowanie zespołu…</p>
@@ -463,6 +463,9 @@ export function TeamPage() {
           isAdmin={isAdmin}
           selectTagId={selectTagId}
           onAddTag={openNewTag}
+          onManageTags={() => setManageTags(true)}
+          onAddPosition={() => setShowPosition(true)}
+          onManagePositions={() => setManagePositions(true)}
           onClose={() => setSelected(null)}
           onSaved={(row) => {
             setSelected(row);

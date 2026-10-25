@@ -1,8 +1,33 @@
+export type UserPreferences = {
+  time_format: "h24" | "h12";
+  date_format: "dmy" | "ymd" | "mdy";
+  week_starts_on: "monday" | "sunday";
+  theme: "system" | "light" | "dark";
+};
+
+export type UserSecurity = {
+  totp_enabled: boolean;
+  email_otp_enabled: boolean;
+};
+
 export type User = {
   id: string;
   email: string;
   roles: string[];
   employee_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  phone?: string | null;
+  pending_email?: string | null;
+  security?: UserSecurity;
+  preferences?: UserPreferences;
+};
+
+export const DEFAULT_USER_PREFERENCES: UserPreferences = {
+  time_format: "h24",
+  date_format: "dmy",
+  week_starts_on: "monday",
+  theme: "system",
 };
 export type Me = {
   user: User;
@@ -317,18 +342,45 @@ export async function openFileUrl(
   };
 }
 
-export function localDate(value: string) {
-  return new Intl.DateTimeFormat("pl-PL", {
-    dateStyle: "medium",
-    timeStyle: "short",
+let activePreferences: UserPreferences = { ...DEFAULT_USER_PREFERENCES };
+
+export function setActivePreferences(prefs: UserPreferences | null | undefined) {
+  activePreferences = prefs ? { ...prefs } : { ...DEFAULT_USER_PREFERENCES };
+}
+
+export function getActivePreferences() {
+  return activePreferences;
+}
+
+function dateParts(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Warsaw",
-  }).format(new Date(value));
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  return { y: get("year"), m: get("month"), d: get("day") };
+}
+
+export function formatDateOnly(value: string | Date, prefs = activePreferences) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const { y, m, d } = dateParts(date);
+  if (prefs.date_format === "ymd") return `${y}-${m}-${d}`;
+  if (prefs.date_format === "mdy") return `${m}/${d}/${y}`;
+  return `${d}.${m}.${y}`;
+}
+
+export function localDate(value: string) {
+  return `${formatDateOnly(value)} ${localTime(value)}`;
 }
 
 export function localTime(value: string) {
-  return new Intl.DateTimeFormat("pl-PL", {
+  const hour12 = activePreferences.time_format === "h12";
+  return new Intl.DateTimeFormat(hour12 ? "en-US" : "pl-PL", {
     hour: "2-digit",
     minute: "2-digit",
+    hour12,
     timeZone: "Europe/Warsaw",
   }).format(new Date(value));
 }

@@ -87,13 +87,18 @@ def issue_email_change_token(db: Session, user_id: UUID) -> str:
 
 
 def user_view(db: Session, user: User):
+    from .account import enrich_user_view
+
     own = own_employee(db, user)
-    return {
+    base = {
         "id": str(user.id),
         "email": user.email,
         "roles": sorted(role_codes(db, user)),
         "employee_id": str(own.id) if own else None,
+        "first_name": own.first_name if own else None,
+        "last_name": own.last_name if own else None,
     }
+    return enrich_user_view(db, user, base)
 
 
 class LoginIn(BaseModel):
@@ -123,8 +128,74 @@ def login(data: LoginIn, response: Response, request: Request, db: Session = Dep
         db.add(LoginAttempt(key_hash=key))
         db.commit()
         raise HTTPException(401, "Nieprawidłowe dane logowania")
+
+    from .account import issue_login_2fa_challenge, send_email_otp, twofa_required
+
+    if twofa_required(user):
+        challenge = issue_login_2fa_challenge(db, user)
+        methods = []
+        if user.totp_enabled_at is not None:
+            methods.append("totp")
+        if user.email_otp_enabled:
+            methods.append("email")
+            send_email_otp(db, user)
+        db.commit()
+        return {
+            "requires_2fa": True,
+            "challenge_token": challenge,
+            "methods": methods,
+        }
+
     token, csrf = issue_session(db, user)
     audit(db, user, "auth.login", "user", user.id)
+    db.commit()
+    response.set_cookie(
+        "tl_session", token, httponly=True, secure=secure_cookie(), samesite="lax", max_age=604800, path="/"
+    )
+    response.set_cookie(
+        "tl_csrf", csrf, httponly=False, secure=secure_cookie(), samesite="lax", max_age=604800, path="/"
+    )
+    return {"csrf_token": csrf, "user": user_view(db, user)}
+
+
+class Login2faIn(BaseModel):
+    challenge_token: str
+    code: str = Field(min_length=4, max_length=12)
+
+
+@router.post("/login/2fa")
+def login_2fa(data: Login2faIn, response: Response, db: Session = Depends(get_db)):
+    import pyotp
+
+    from .account import verify_email_otp
+    from .main import audit
+
+    row = db.scalar(
+        select(AuthToken)
+        .where(
+            AuthToken.token_hash == digest(data.challenge_token),
+            AuthToken.purpose == "login_2fa",
+            AuthToken.used_at.is_(None),
+            AuthToken.expires_at > now(),
+        )
+        .with_for_update()
+    )
+    if not row:
+        raise HTTPException(401, "Sesja weryfikacji wygasła — zaloguj się ponownie")
+    user = db.get(User, row.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(401, "Konto nieaktywne")
+    code = data.code.strip()
+    ok = False
+    if user.totp_enabled_at and user.totp_secret and pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
+        ok = True
+    if not ok and user.email_otp_enabled and verify_email_otp(db, user, code):
+        ok = True
+    if not ok:
+        raise HTTPException(401, "Nieprawidłowy kod weryfikacyjny")
+    row.used_at = now()
+    token, csrf = issue_session(db, user)
+    audit(db, user, "auth.login", "user", user.id, {"via": "2fa"})
     db.commit()
     response.set_cookie(
         "tl_session", token, httponly=True, secure=secure_cookie(), samesite="lax", max_age=604800, path="/"

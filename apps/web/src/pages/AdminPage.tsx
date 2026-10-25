@@ -57,7 +57,6 @@ export function AdminPage() {
     <>
       <PageHeading
         title="Administracja"
-        description="Konta, zaproszenia i historia zmian w organizacji."
         action={
           <Button
             onClick={() => {

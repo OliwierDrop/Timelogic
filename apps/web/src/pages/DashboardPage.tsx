@@ -20,10 +20,7 @@ export function DashboardPage() {
     corrections.data?.filter((x) => x.status === "pending").length || 0;
   return (
     <>
-      <PageHeading
-        title="Dzień dobry"
-        description="Najważniejsze informacje o czasie pracy w jednym miejscu."
-      />
+      <PageHeading title="Dzień dobry" />
       <div className="dashboard-grid">
         <Panel className="status-panel">
           <div className="status-top">

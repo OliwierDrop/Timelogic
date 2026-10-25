@@ -78,10 +78,7 @@ export function CorrectionsPage() {
   );
   return (
     <>
-      <PageHeading
-        title="Korekty czasu"
-        description="Wnioski o zmianę zapisanego czasu pracy i historia decyzji."
-      />
+      <PageHeading title="Korekty czasu" />
       <Panel title="Wnioski">
         {corrections.isPending ? (
           <p className="subtle">Ładowanie wniosków…</p>
