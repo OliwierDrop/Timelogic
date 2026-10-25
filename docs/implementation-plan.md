@@ -10,5 +10,13 @@
 | 5 Nieobecności | Obsługiwać wnioski po 4 | Typy, wnioski, salda; formularze i kalendarz | Decyzje, zakres i saldo | Pełny obieg wniosku; ryzyko naliczania urlopu |
 | 6 Produkcyjna ewidencja | Raporty po 3–5 | Dodatkowe kategorie czasu, raporty i eksport | Uzgodnienie danych, restore, WCAG, E2E i przegląd prawny | Dopiero po akceptacji HR/prawnej i audycie bezpieczeństwa |
 | 7 Rozbudowa | QR i integracje po 6 | Osobne migracje i kontrakty | Osobne modele zagrożeń | Każda funkcja oceniana oddzielnie |
+| 8 Klient mobilny | Android/iOS po stabilnym API (po 3–6; auth mobile możliwy wcześniej) | Osobna appka (np. React Native / Flutter / natywna); **najpierw adres serwera** (`PUBLIC_ORIGIN` instalacji), potem login do konta na tej instancji; ten sam `/api/v1` | Auth pod native (Bearer/token obok cookie+CSRF dla weba), HTTPS, walidacja hosta, brak hardkodowanego origin | Model multi-instance (self-host): jedna appka → wiele serwerów firm; zakres MVP: RCP + mój grafik, potem wnioski/planowanie |
+
+### Etap 8 — założenia (mobilny klient multi-instance)
+
+- Instalacja TimeLogic zostaje self-hosted (Compose/API/DB per firma). Aplikacja mobilna **nie** wymaga centralnej chmury tenantów: użytkownik wpisuje URL serwera (np. `https://rcp.firma.pl`), appka sprawdza dostępność (`/health` lub lekki endpoint discovery) i dopiero wtedy pokazuje logowanie.
+- Web nadal działa w modelu same-origin (cookie + CSRF). Mobile dostaje równoległy kontrakt sesji (np. token w `Authorization`), bez łamania istniejącego logowania przeglądarkowego.
+- Base URL serwera jest konfigurowalny i zapamiętywany lokalnie na urządzeniu; zmiana serwera = wylogowanie / nowa sesja.
+- Priorytet funkcji: Start/Stop/przerwy i podgląd opublikowanego grafiku; kreator zbiorczy i admin organizacji pozostają w webie na start.
 
 CI: lint, typy, testy jednostkowe, integracyjne API na PostgreSQL, testy komponentów, Playwright i migracje. Dane demo nie są danymi produkcyjnymi.

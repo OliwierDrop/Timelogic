@@ -14,7 +14,10 @@ Dokumentacja projektowa: [`docs/`](docs/). Kontekst produktowy: [`PRODUCT.md`](P
 
 ## Instalacja na serwerze (Linux)
 
-Wymagania: Docker Engine, plugin Compose (`docker compose`), git.
+**Wspierany host:** Debian 12+ i Ubuntu 22.04+. Inne dystrybucje — best effort.
+
+Wymagania na hoście (instalator ich **nie** instaluje): Docker Engine, plugin Compose (`docker compose`), git.  
+Docker na Debianie: [docs.docker.com/engine/install/debian](https://docs.docker.com/engine/install/debian/).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OliwierDrop/Timelogic/main/scripts/install.sh | bash
@@ -22,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/OliwierDrop/Timelogic/main/scripts/
 
 Albo po sklonowaniu: `./scripts/install.sh`.
 
-Instalator pyta o organizację, admina oraz **tryb udostępniania**:
+Instalator pyta o **nazwę organizacji**, **strefę czasową**, konto admina oraz **tryb udostępniania**. Generuje `POSTGRES_PASSWORD`, `APP_SECRET` i zapisuje `COMPOSE_FILE` (overlay trybu), żeby potem wystarczyło `docker compose ps` w katalogu instalacji.
 
 | Tryb | Opis | Compose |
 | --- | --- | --- |
@@ -30,7 +33,7 @@ Instalator pyta o organizację, admina oraz **tryb udostępniania**:
 | 2 — Reverse proxy | DNS + HTTPS na Caddy/nginx (zalecane) | `scripts/compose.proxy.yml` → `127.0.0.1:8080` |
 | 3 — Własne PEM | HTTPS w kontenerze `web` | `scripts/compose.tls.yml` + `./certs` |
 
-W trybie 2 zapisuje `generated-proxy.md` i wzory w [`scripts/proxy-examples/`](scripts/proxy-examples/). Let’s Encrypt zostaje po stronie proxy (np. Caddy). Hasło admina nie jest zapisywane na dysku.
+W trybie 2 zapisuje `generated-proxy.md` i wzory w [`scripts/proxy-examples/`](scripts/proxy-examples/). Let’s Encrypt zostaje po stronie proxy (np. Caddy). Hasło admina nie jest zapisywane na dysku. SMTP konfigurujesz później w UI (`/organizacja` → Poczta).
 
 Opcjonalnie: `TIMELOGIC_DIR`, `TIMELOGIC_REPO`, `TIMELOGIC_BRANCH`.
 
@@ -52,7 +55,7 @@ docker compose up --build -d
 
 API (wewnętrznie) nasłuchuje na porcie `8000` w sieci Compose; web proxy’uje `/api`. Postgres lokalnie: `127.0.0.1:55432`.
 
-Pierwszy admin: ustaw `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD` (min. 12 znaków) i uruchom w kontenerze API `python -m app.bootstrap`. Bootstrap tworzy organizację, konto admina **oraz kartę w Zespole** (opcjonalnie `BOOTSTRAP_FIRST_NAME` / `BOOTSTRAP_LAST_NAME`). Dane lokalne trzymaj w `.local-admin.txt` / `.env` — **nie commituj**.
+Pierwszy admin: ustaw `BOOTSTRAP_EMAIL`, `BOOTSTRAP_PASSWORD` (min. 12 znaków) i uruchom w kontenerze API `python -m app.bootstrap`. Bootstrap tworzy organizację, konto admina **oraz kartę w Zespole** (opcjonalnie `BOOTSTRAP_ORGANIZATION`, `BOOTSTRAP_TIMEZONE`, `BOOTSTRAP_FIRST_NAME` / `BOOTSTRAP_LAST_NAME`). Dane lokalne trzymaj w `.local-admin.txt` / `.env` — **nie commituj**.
 
 W Zespole każdy pracownik ma konto z e-mailem. Status **zaproszony** = konto istnieje, ale jeszcze bez hasła (`password_hash` puste).
 
@@ -97,10 +100,12 @@ Wzór: [`.env.example`](.env.example)
 | `PUBLIC_ORIGIN` | Dokładny publiczny URL przeglądarki (origin CSRF), np. `https://rcp.firma.pl` |
 | `COOKIE_SECURE` | `false` lokalnie, `true` przy HTTPS |
 | `TRUSTED_PROXIES` | Lista IP/CIDR zaufanego proxy; wtedy `X-Forwarded-For` wpływa na limit logowań |
-| `APP_SECRET` | Tajny klucz do szyfrowania hasła SMTP w bazie (zalecane w produkcji) |
+| `APP_SECRET` | Tajny klucz do szyfrowania hasła SMTP (instalator generuje; lokalnie ustaw sam) |
+| `COMPOSE_FILE` | Overlay po instalacji serwerowej, np. `compose.yaml:scripts/compose.proxy.yml` |
 | `SMTP_*` | Opcjonalny seed przy pierwszym odczycie; potem edycja w UI (`/organizacja` → Poczta). Bez SMTP link zaproszenia wraca w API/UI |
 | `BOOTSTRAP_EMAIL` / `BOOTSTRAP_PASSWORD` | Pierwszy admin (min. 12 znaków hasła); bootstrap zakłada też kartę w Zespole |
 | `BOOTSTRAP_ORGANIZATION` | Nazwa organizacji (domyślnie „Moja organizacja”) |
+| `BOOTSTRAP_TIMEZONE` | Strefa IANA (domyślnie `Europe/Warsaw`) |
 | `BOOTSTRAP_FIRST_NAME` / `BOOTSTRAP_LAST_NAME` | Imię i nazwisko na karcie admina (domyślnie Administrator / System) |
 
 ## Status

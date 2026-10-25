@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# TimeLogic — interaktywny instalator (Linux + Docker).
+# TimeLogic — interaktywny instalator.
+# Przygotowany / wspierany: Debian 12+ i Ubuntu 22.04+ (Docker Engine + Compose + git).
+# Inne dystrybucje Linux: best effort, bez gwarancji.
 # curl -fsSL https://raw.githubusercontent.com/OliwierDrop/Timelogic/main/scripts/install.sh | bash
 # albo: ./scripts/install.sh
 
@@ -8,7 +10,7 @@ set -euo pipefail
 REPO_URL="${TIMELOGIC_REPO:-https://github.com/OliwierDrop/Timelogic.git}"
 REPO_BRANCH="${TIMELOGIC_BRANCH:-main}"
 
-# Ustawiane w ask_config / ask_exposure
+# Ustawiane w ask_admin / ask_exposure
 EXPOSE_MODE=""
 COMPOSE_OVERRIDE=""
 PUBLIC_ORIGIN=""
@@ -16,6 +18,23 @@ COOKIE_SECURE=""
 TRUSTED_PROXIES=""
 CERT_FULLCHAIN=""
 CERT_PRIVKEY=""
+ORG_TIMEZONE=""
+APP_SECRET=""
+
+# Zgodne z COMMON_TIMEZONES w apps/api/app/organization.py
+COMMON_TIMEZONES=(
+  Europe/Warsaw
+  Europe/Berlin
+  Europe/Prague
+  Europe/Vienna
+  Europe/Budapest
+  Europe/Vilnius
+  Europe/Riga
+  Europe/Tallinn
+  Europe/Kyiv
+  Europe/London
+  UTC
+)
 
 die() {
   echo "Błąd: $*" >&2
@@ -42,9 +61,11 @@ require_cmd() {
 
 preflight() {
   require_cmd git
-  require_cmd docker
+  if ! command -v docker >/dev/null 2>&1; then
+    die "Brak dockera. Zainstaluj Docker Engine na Debian/Ubuntu: https://docs.docker.com/engine/install/debian/"
+  fi
   if ! docker compose version >/dev/null 2>&1; then
-    die "Wymagany Docker Compose (plugin: docker compose). Zainstaluj Docker Engine + Compose."
+    die "Wymagany Docker Compose (plugin: docker compose). Zainstaluj Docker Engine + Compose (Debian/Ubuntu): https://docs.docker.com/engine/install/debian/"
   fi
   if ! docker info >/dev/null 2>&1; then
     die "Daemon Dockera nie odpowiada. Uruchom Docker i spróbuj ponownie."
@@ -91,11 +112,30 @@ valid_https_dns() {
   return 0
 }
 
+valid_timezone() {
+  local tz="$1"
+  local known
+  for known in "${COMMON_TIMEZONES[@]}"; do
+    if [[ "$tz" == "$known" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 generate_password() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -base64 24 | tr -d '\n' | tr '/+' 'Aa'
   else
     head -c 32 /dev/urandom | base64 | tr -d '\n' | tr '/+' 'Aa'
+  fi
+}
+
+generate_app_secret() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 48 | tr -d '\n'
+  else
+    head -c 48 /dev/urandom | base64 | tr -d '\n'
   fi
 }
 
@@ -146,11 +186,20 @@ clone_or_use() {
 
 ask_admin() {
   echo
-  echo "=== TimeLogic — konto administratora ==="
+  echo "=== TimeLogic — organizacja i administrator ==="
   echo
 
   ORG_NAME="$(prompt "Nazwa organizacji" "Moja organizacja")"
   [[ -n "$ORG_NAME" ]] || die "Nazwa organizacji jest wymagana"
+
+  echo "Dostępne strefy: ${COMMON_TIMEZONES[*]}"
+  while true; do
+    ORG_TIMEZONE="$(prompt "Strefa czasowa organizacji" "Europe/Warsaw")"
+    if valid_timezone "$ORG_TIMEZONE"; then
+      break
+    fi
+    echo "Wybierz strefę z listy powyżej." >&2
+  done
 
   FIRST_NAME="$(prompt "Imię administratora" "Administrator")"
   [[ -n "$FIRST_NAME" ]] || die "Imię jest wymagane"
@@ -182,6 +231,7 @@ ask_admin() {
   done
 
   POSTGRES_PASSWORD="$(generate_password)"
+  APP_SECRET="$(generate_app_secret)"
 }
 
 ask_exposure() {
@@ -271,6 +321,8 @@ write_env() {
     echo "PUBLIC_ORIGIN=${PUBLIC_ORIGIN}"
     echo "COOKIE_SECURE=${COOKIE_SECURE}"
     echo "UPLOAD_DIR=/data/uploads"
+    echo "APP_SECRET=${APP_SECRET}"
+    echo "COMPOSE_FILE=compose.yaml:${COMPOSE_OVERRIDE}"
     if [[ -n "$TRUSTED_PROXIES" ]]; then
       echo "TRUSTED_PROXIES=${TRUSTED_PROXIES}"
     fi
@@ -348,6 +400,7 @@ run_bootstrap() {
     -e "BOOTSTRAP_EMAIL=${ADMIN_EMAIL}" \
     -e "BOOTSTRAP_PASSWORD=${ADMIN_PASSWORD}" \
     -e "BOOTSTRAP_ORGANIZATION=${ORG_NAME}" \
+    -e "BOOTSTRAP_TIMEZONE=${ORG_TIMEZONE}" \
     -e "BOOTSTRAP_FIRST_NAME=${FIRST_NAME}" \
     -e "BOOTSTRAP_LAST_NAME=${LAST_NAME}" \
     api python -m app.bootstrap; then
@@ -357,6 +410,9 @@ run_bootstrap() {
 
 main() {
   echo "TimeLogic — instalator"
+  echo "Wspierany host: Debian 12+ / Ubuntu 22.04+ (Docker Engine + Compose + git)."
+  echo "Skrypt nie instaluje Dockera ani pakietów systemowych."
+  echo
   preflight
   ensure_tty
 
@@ -377,16 +433,20 @@ main() {
 
   echo
   echo "=== Instalacja zakończona ==="
-  echo "Tryb:       ${EXPOSE_MODE} (${COMPOSE_OVERRIDE})"
-  echo "Aplikacja:  ${PUBLIC_ORIGIN}"
-  echo "E-mail:     ${ADMIN_EMAIL}"
-  echo "Hasło:      (to, które podałeś — nie jest zapisane na dysku)"
-  echo "Katalog:    ${app_dir}"
+  echo "Tryb:         ${EXPOSE_MODE} (${COMPOSE_OVERRIDE})"
+  echo "Aplikacja:    ${PUBLIC_ORIGIN}"
+  echo "Organizacja:  ${ORG_NAME}"
+  echo "Strefa:       ${ORG_TIMEZONE}"
+  echo "E-mail:       ${ADMIN_EMAIL}"
+  echo "Hasło:        (to, które podałeś — nie jest zapisane na dysku)"
+  echo "Katalog:      ${app_dir}"
+  echo "SMTP:         skonfiguruj później w UI (/organizacja → Poczta)"
   if [[ "$EXPOSE_MODE" == "2" ]]; then
-    echo "Proxy:      skonfiguruj edge wg ${app_dir}/generated-proxy.md"
+    echo "Proxy:        skonfiguruj edge wg ${app_dir}/generated-proxy.md"
   fi
   echo
-  echo "Zarządzanie: cd ${app_dir} && docker compose -f compose.yaml -f ${COMPOSE_OVERRIDE} ps"
+  echo "Zarządzanie:  cd ${app_dir} && docker compose ps"
+  echo "(COMPOSE_FILE w .env wybiera overlay ${COMPOSE_OVERRIDE})"
 }
 
 main "$@"

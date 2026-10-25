@@ -14,6 +14,7 @@ def main():
     email = os.getenv("BOOTSTRAP_EMAIL", "").strip().lower()
     password = os.getenv("BOOTSTRAP_PASSWORD", "")
     name = os.getenv("BOOTSTRAP_ORGANIZATION", "Moja organizacja").strip()
+    timezone = os.getenv("BOOTSTRAP_TIMEZONE", "Europe/Warsaw").strip() or "Europe/Warsaw"
     first_name = os.getenv("BOOTSTRAP_FIRST_NAME", "Administrator").strip() or "Administrator"
     last_name = os.getenv("BOOTSTRAP_LAST_NAME", "System").strip() or "System"
     if not email or "@" not in email or len(password) < 12 or not name:
@@ -21,7 +22,7 @@ def main():
     with SessionLocal.begin() as db:
         if db.scalar(select(Organization.id).limit(1)):
             sys.exit("Organizacja już istnieje; bootstrap działa tylko na pustej bazie")
-        organization = Organization(name=name)
+        organization = Organization(name=name, timezone=timezone)
         db.add(organization)
         db.flush()
         roles = {}
@@ -53,7 +54,10 @@ def main():
                 target_id=organization.id,
             )
         )
-        print(f"Utworzono organizację, administratora i kartę w Zespole: {email} ({employee.employee_number})")
+        print(
+            f"Utworzono organizację ({name}, {timezone}), administratora i kartę w Zespole: "
+            f"{email} ({employee.employee_number})"
+        )
 
 
 if __name__ == "__main__":
