@@ -25,4 +25,4 @@ Instalator (`scripts/install.sh`) przeprowadza wybór trybu. Let’s Encrypt nie
 - `organization_id` od pierwszej migracji; UI obsługuje jedną organizację.
 - Daty zdarzeń jako `timestamptz` w UTC; prezentacja według strefy organizacji.
 - Role stałe w pierwszej wersji; rozbudowany edytor uprawnień dopiero po zebraniu przypadków użycia.
-- Publikacja grafików oddziela plan roboczy od danych widocznych pracownikowi.
+- Publikacja grafików oddziela plan roboczy od danych widocznych pracownikowi; szkic z `replaces_id` może nadpisać opublikowaną wersję po kolejnej publikacji (odrzucenie szkiców przywraca ostatnią opublikowaną). Szczegóły: [calendar-spec.md](calendar-spec.md).

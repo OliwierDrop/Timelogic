@@ -81,6 +81,19 @@ export type Correction = {
   proposed_end: string;
   created_at: string;
 };
+export type ShiftKind = "standard" | "flexible" | "on_call";
+export type ShiftFlags = {
+  count_before?: boolean;
+  count_after?: boolean;
+  auto_break?: boolean;
+  auto_break_minutes?: number;
+  unpaid_break?: boolean;
+  property_guard?: boolean;
+  minors_prohibited?: boolean;
+  on_call_type?: string;
+  flexible_window_start?: string;
+  flexible_duration_minutes?: number;
+};
 export type Shift = {
   id: string;
   employee_id: string;
@@ -89,6 +102,27 @@ export type Shift = {
   ended_at: string;
   published_at: string | null;
   published: boolean;
+  kind: ShiftKind;
+  color: string | null;
+  note: string | null;
+  flags: ShiftFlags;
+  replaces_id: string | null;
+  superseded_at: string | null;
+  is_draft: boolean;
+};
+export type CalendarDayType = {
+  id: string;
+  employee_id: string;
+  day: string;
+  code: "P" | "ND" | "SW" | "TP5" | "HW";
+};
+export type AvailabilityEntry = {
+  id: string;
+  employee_id: string;
+  day: string;
+  status: "available" | "hours" | "unavailable";
+  start_minute: number | null;
+  end_minute: number | null;
 };
 export type ShiftTemplate = {
   id: string;

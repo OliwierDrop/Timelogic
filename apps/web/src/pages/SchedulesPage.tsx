@@ -1,67 +1,95 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useOutletContext } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import {
   api,
   ApiError,
-  localTime,
-  post,
+  type AvailabilityEntry,
+  type CalendarDayType,
   type Employee,
+  type EmploymentTerm,
+  type LeaveBalance,
+  type LeaveRequest,
+  type LeaveType,
+  type Position,
   type Shift,
+  type Tag,
   type User,
 } from "../api";
-import { Button, Empty, Field, Message, Modal, Panel } from "../components";
+import { Message } from "../components";
 import { useSetFilterSidebar } from "../layout/filterSidebarContext";
 import { PageHeading } from "../layout/PageHeading";
-
-function startOfWeek(value: Date) {
-  const date = new Date(value);
-  const day = (date.getDay() + 6) % 7;
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - day);
-  return date;
-}
-
-function addDays(value: Date, days: number) {
-  const date = new Date(value);
-  date.setDate(date.getDate() + days);
-  return date;
-}
-
-function weekLabel(start: Date) {
-  const end = addDays(start, 6);
-  const format = new Intl.DateTimeFormat("pl-PL", {
-    day: "numeric",
-    month: "short",
-  });
-  return `${format.format(start)} – ${format.format(end)}`;
-}
-
-function toLocalInput(value: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}T${pad(value.getHours())}:${pad(value.getMinutes())}`;
-}
+import { BulkWizard } from "./schedules/BulkWizard";
+import {
+  addDays,
+  addMonths,
+  daysInRange,
+  parseDateKey,
+  rangeLabel,
+  startOfMonth,
+  startOfWeek,
+  toDateKey,
+} from "./schedules/dateUtils";
+import { ScheduleDayPanel } from "./schedules/ScheduleDayPanel";
+import { ScheduleFilters } from "./schedules/ScheduleFilters";
+import { ScheduleHeadingActions } from "./schedules/ScheduleHeadingActions";
+import { ScheduleLeaveModal } from "./schedules/ScheduleLeaveModal";
+import { ScheduleMatrix } from "./schedules/ScheduleMatrix";
+import { ScheduleViewTabs } from "./schedules/ScheduleViewTabs";
+import {
+  leavesInRange,
+  nameOf,
+  selectedEmployeesLabel,
+} from "./schedules/scheduleLookups";
+import type { ScheduleViewTab } from "./schedules/scheduleViewTab";
+import {
+  defaultShiftValues,
+  ShiftFormModal,
+  type ShiftFormValues,
+  valuesFromShift,
+} from "./schedules/ShiftFormModal";
+import { useScheduleMutations } from "./schedules/useScheduleMutations";
 
 export function SchedulesPage() {
   const { user } = useOutletContext<{ user: User }>();
-  const client = useQueryClient();
   const canPlan = user.roles.some((r) =>
     ["manager", "hr", "admin"].includes(r),
   );
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [viewTab, setViewTab] = useState<ScheduleViewTab>("all");
+  const [mode, setMode] = useState<"week" | "month">("month");
+  const [anchor, setAnchor] = useState(() => startOfMonth(new Date()));
+  const [search, setSearch] = useState("");
   const [draftOnly, setDraftOnly] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [employeeId, setEmployeeId] = useState("");
-  const [startedAt, setStartedAt] = useState("");
-  const [endedAt, setEndedAt] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
-  const weekEnd = addDays(weekStart, 7);
+  const [kindFilter, setKindFilter] = useState<"all" | Shift["kind"]>("all");
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [positionFilter, setPositionFilter] = useState("");
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [cell, setCell] = useState<{ employeeId: string; day: Date } | null>(
+    null,
+  );
+  const [shiftForm, setShiftForm] = useState<ShiftFormValues | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [copyTarget, setCopyTarget] = useState("");
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaveTypeId, setLeaveTypeId] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
+
+  const rangeStart =
+    mode === "week" ? startOfWeek(anchor, "monday") : startOfMonth(anchor);
+  const days = daysInRange(mode, rangeStart);
+  const rangeEnd = addDays(days[days.length - 1], 1);
+  const fromIso = rangeStart.toISOString();
+  const toIso = rangeEnd.toISOString();
+  const fromKey = toDateKey(rangeStart);
+  const toKey = toDateKey(days[days.length - 1]);
+
   const shifts = useQuery({
-    queryKey: ["shifts", weekStart.toISOString(), canPlan],
+    queryKey: ["shifts", fromIso, toIso, canPlan],
     queryFn: () =>
       api<Shift[]>(
-        `/shifts?from=${encodeURIComponent(weekStart.toISOString())}&to=${encodeURIComponent(weekEnd.toISOString())}${canPlan ? "&include_drafts=true" : ""}`,
+        `/shifts?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}${canPlan ? "&include_drafts=true" : ""}`,
       ),
   });
   const employees = useQuery({
@@ -69,304 +97,423 @@ export function SchedulesPage() {
     queryFn: () => api<Employee[]>("/employees"),
     enabled: canPlan,
   });
-  const openCreate = (day?: Date, employee?: string) => {
-    const start = day ? new Date(day) : new Date(weekStart);
-    start.setHours(8, 0, 0, 0);
-    const end = new Date(start);
-    end.setHours(16, 0, 0, 0);
-    setEmployeeId(employee || "");
-    setStartedAt(toLocalInput(start));
-    setEndedAt(toLocalInput(end));
-    setModalOpen(true);
-  };
-  const create = useMutation({
-    mutationFn: () =>
-      post<Shift>("/shifts", {
-        employee_id: employeeId,
-        started_at: new Date(startedAt).toISOString(),
-        ended_at: new Date(endedAt).toISOString(),
-      }),
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["shifts"] });
-      setModalOpen(false);
-    },
+  const tags = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => api<Tag[]>("/tags"),
+    enabled: canPlan,
   });
-  const publish = useMutation({
-    mutationFn: (shift_ids: string[]) =>
-      post<Shift[]>("/shifts/publish", { shift_ids }),
-    onSuccess: () => {
-      setSelected([]);
-      client.invalidateQueries({ queryKey: ["shifts"] });
-    },
+  const positions = useQuery({
+    queryKey: ["positions"],
+    queryFn: () => api<Position[]>("/positions"),
+    enabled: canPlan,
   });
+  const dayTypes = useQuery({
+    queryKey: ["day-types", fromKey, toKey],
+    queryFn: () =>
+      api<CalendarDayType[]>(`/calendar/day-types?from=${fromKey}&to=${toKey}`),
+  });
+  const availability = useQuery({
+    queryKey: ["availability", fromKey, toKey],
+    queryFn: () =>
+      api<AvailabilityEntry[]>(
+        `/calendar/availability?from=${fromKey}&to=${toKey}`,
+      ),
+  });
+  const leaveTypes = useQuery({
+    queryKey: ["leave-types"],
+    queryFn: () => api<LeaveType[]>("/leave-types"),
+  });
+  const leaveRequests = useQuery({
+    queryKey: ["leave-requests", "calendar"],
+    queryFn: () => api<LeaveRequest[]>("/leave-requests?limit=200"),
+  });
+  const cellTerms = useQuery({
+    queryKey: ["employment-terms", cell?.employeeId],
+    queryFn: () =>
+      api<EmploymentTerm[]>(`/employees/${cell!.employeeId}/employment-terms`),
+    enabled: Boolean(cell?.employeeId && canPlan),
+  });
+  const cellBalances = useQuery({
+    queryKey: ["leave-balances", cell?.employeeId],
+    queryFn: () =>
+      api<LeaveBalance[]>(
+        `/leave-balances?year=${rangeStart.getFullYear()}&employee_id=${cell!.employeeId}`,
+      ),
+    enabled: Boolean(cell?.employeeId),
+  });
+
+  const employeeRows = useMemo(() => {
+    if (!canPlan) {
+      if (!user.employee_id) return [];
+      return [
+        {
+          id: user.employee_id,
+          first_name: "Twój",
+          last_name: "grafik",
+          roles: [] as string[],
+        } as Employee,
+      ];
+    }
+    const query = search.trim().toLowerCase();
+    return (employees.data || []).filter((row) => {
+      if (tagFilter && !row.tag_ids?.includes(tagFilter)) return false;
+      if (positionFilter && row.position_id !== positionFilter) return false;
+      if (query) {
+        const haystack =
+          `${row.first_name} ${row.last_name} ${row.email || ""} ${row.employee_number || ""}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
+      return true;
+    });
+  }, [
+    canPlan,
+    employees.data,
+    user.employee_id,
+    tagFilter,
+    positionFilter,
+    search,
+  ]);
+
   const drafts = shifts.data?.filter((shift) => !shift.published) || [];
-  const visible =
-    shifts.data?.filter((shift) => !draftOnly || !shift.published) || [];
-  const nameOf = (id: string) => {
-    const employee = employees.data?.find((row) => row.id === id);
-    return employee
-      ? `${employee.first_name} ${employee.last_name}`
-      : id.slice(0, 8);
+  const visibleShifts = (shifts.data || []).filter((shift) => {
+    if (draftOnly && shift.published) return false;
+    if (kindFilter !== "all" && shift.kind !== kindFilter) return false;
+    return true;
+  });
+
+  const visibleLeaves = useMemo(
+    () =>
+      leavesInRange(
+        leaveRequests.data,
+        fromKey,
+        toKey,
+        leaveTypeFilter,
+      ),
+    [leaveRequests.data, fromKey, toKey, leaveTypeFilter],
+  );
+
+  const targetEmployeeIds = useMemo(
+    () =>
+      selectedEmployeeIds.length
+        ? selectedEmployeeIds
+        : employeeRows.map((row) => row.id),
+    [selectedEmployeeIds, employeeRows],
+  );
+
+  const mutations = useScheduleMutations({
+    fromIso,
+    toIso,
+    fromKey,
+    toKey,
+    cell,
+    selectedEmployeeIds,
+    targetEmployeeIds,
+    visibleShifts,
+    copyTarget,
+    leaveTypeId,
+    leaveReason,
+    onSavedShift: () => setShiftForm(null),
+    onBulkDone: () => setBulkOpen(false),
+    onActionsDone: () => setActionsOpen(false),
+    onCopyDone: () => {
+      setActionsOpen(false);
+      setCopyTarget("");
+    },
+    onLeaveDone: () => {
+      setLeaveOpen(false);
+      setLeaveReason("");
+    },
+  });
+
+  const openCreate = (employeeId: string, day: Date, existing?: Shift) => {
+    if (existing) setShiftForm(valuesFromShift(existing, day));
+    else setShiftForm(defaultShiftValues(employeeId, day));
   };
-  const toggle = (id: string) =>
-    setSelected((current) =>
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id],
+
+  const openLeave = (employeeId: string, day: Date) => {
+    setCell({ employeeId, day });
+    setLeaveTypeId(leaveTypes.data?.[0]?.id || "");
+    setLeaveOpen(true);
+  };
+
+  const navigate = (delta: number) => {
+    setAnchor((current) =>
+      mode === "week" ? addDays(current, delta * 7) : addMonths(current, delta),
     );
-  const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  };
+
+  const activeNorm =
+    cellTerms.data
+      ?.slice()
+      .reverse()
+      .find((term) => term.effective_from <= toDateKey(cell?.day || new Date())) ||
+    null;
+
   useSetFilterSidebar(
     () => (
-      <>
-        <p className="subtle">
-          Okres tygodnia ustawiasz w nagłówku. Tu zawężysz widok publikacji.
-        </p>
-        <div className="filter-group">
-          <h3>Widok</h3>
-          {canPlan ? (
-            <>
-              <button
-                type="button"
-                className={`filter-item ${!draftOnly ? "active" : ""}`}
-                onClick={() => setDraftOnly(false)}
-              >
-                Wszystkie zmiany
-              </button>
-              <button
-                type="button"
-                className={`filter-item ${draftOnly ? "active" : ""}`}
-                onClick={() => setDraftOnly(true)}
-              >
-                Tylko nieopublikowane
-              </button>
-            </>
-          ) : (
-            <p className="subtle">Widzisz tylko opublikowany grafik.</p>
-          )}
-        </div>
-      </>
+      <ScheduleFilters
+        canPlan={canPlan}
+        viewTab={viewTab}
+        search={search}
+        mode={mode}
+        draftOnly={draftOnly}
+        kindFilter={kindFilter}
+        leaveTypeFilter={leaveTypeFilter}
+        tagFilter={tagFilter}
+        positionFilter={positionFilter}
+        tags={tags.data || []}
+        positions={positions.data || []}
+        leaveTypes={leaveTypes.data || []}
+        onSearch={setSearch}
+        onMode={(value) => {
+          setMode(value);
+          setAnchor((current) =>
+            value === "week"
+              ? startOfWeek(current, "monday")
+              : startOfMonth(current),
+          );
+        }}
+        onNavigate={navigate}
+        onDraftOnly={setDraftOnly}
+        onKindFilter={setKindFilter}
+        onLeaveTypeFilter={setLeaveTypeFilter}
+        onTagFilter={setTagFilter}
+        onPositionFilter={setPositionFilter}
+      />
     ),
-    [canPlan, draftOnly],
+    [
+      canPlan,
+      viewTab,
+      search,
+      draftOnly,
+      kindFilter,
+      leaveTypeFilter,
+      mode,
+      tagFilter,
+      positionFilter,
+      tags.data,
+      positions.data,
+      leaveTypes.data,
+    ],
   );
+
+  const selectedCount = selectedEmployeeIds.length;
+  const showMatrix = Boolean(
+    !shifts.isPending &&
+      !(canPlan && employees.isPending) &&
+      !shifts.isError &&
+      employeeRows.length,
+  );
+
+  const actionError =
+    mutations.publish.error ||
+    mutations.rejectDrafts.error ||
+    mutations.deleteShifts.error ||
+    mutations.bulk.error ||
+    mutations.copy.error;
+
   return (
-    <>
+    <div className={showMatrix ? "schedule-page-pad" : undefined}>
       <PageHeading
-        title="Grafiki"
-        description={
-          canPlan
-            ? "Kalendarz tygodnia. Dodawanie i edycja tylko w oknie modalnym."
-            : "Opublikowany plan pracy na wybrany tydzień."
+        title="Kalendarz"
+        titleAside={
+          <span className="schedule-range-badge">
+            {rangeLabel(mode, rangeStart)}
+          </span>
+        }
+        meta={
+          canPlan ? (
+            <p className="schedule-selection-meta">
+              <span>{selectedEmployeesLabel(selectedCount)}</span>
+              {selectedCount > 0 && (
+                <>
+                  <span className="schedule-selection-sep" aria-hidden>
+                    |
+                  </span>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setSelectedEmployeeIds([])}
+                  >
+                    Odznacz
+                  </button>
+                </>
+              )}
+            </p>
+          ) : undefined
         }
         action={
-          <div className="heading-actions">
-            <div className="week-nav">
-              <button
-                className="icon-button"
-                aria-label="Poprzedni tydzień"
-                onClick={() => setWeekStart(addDays(weekStart, -7))}
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <strong>{weekLabel(weekStart)}</strong>
-              <button
-                className="icon-button"
-                aria-label="Następny tydzień"
-                onClick={() => setWeekStart(addDays(weekStart, 7))}
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-            {canPlan && (
-              <>
-                {drafts.length > 0 && (
-                  <Button
-                    busy={publish.isPending}
-                    onClick={() =>
-                      publish.mutate(
-                        selected.length
-                          ? selected
-                          : drafts.map((shift) => shift.id),
-                      )
-                    }
-                  >
-                    {selected.length
-                      ? `Opublikuj (${selected.length})`
-                      : "Opublikuj szkice"}
-                  </Button>
-                )}
-                <Button onClick={() => openCreate()}>
-                  <Plus size={16} /> Dodaj zmianę
-                </Button>
-              </>
-            )}
-          </div>
+          canPlan ? (
+            <ScheduleHeadingActions
+              viewTab={viewTab}
+              employees={employeeRows}
+              drafts={drafts}
+              selectedEmployeeIds={selectedEmployeeIds}
+              targetEmployeeIds={targetEmployeeIds}
+              actionsOpen={actionsOpen}
+              copyTarget={copyTarget}
+              publishPending={mutations.publish.isPending}
+              copyPending={mutations.copy.isPending}
+              onToggleActions={() => setActionsOpen((open) => !open)}
+              onPublish={(ids) => mutations.publish.mutate(ids)}
+              onRejectDrafts={() => mutations.rejectDrafts.mutate()}
+              onDeleteShifts={() => mutations.deleteShifts.mutate()}
+              onCopyTarget={setCopyTarget}
+              onCopy={() => mutations.copy.mutate()}
+              onResetDayTypes={() => mutations.resetDayTypes.mutate()}
+              onOpenBulk={() => setBulkOpen(true)}
+              onAddShift={() =>
+                openCreate(employeeRows[0]?.id || "", days[0] || new Date())
+              }
+              onAddLeave={() => {
+                const employeeId =
+                  selectedEmployeeIds[0] || employeeRows[0]?.id || "";
+                openLeave(employeeId, days[0] || new Date());
+              }}
+            />
+          ) : undefined
         }
       />
-      {publish.isError && (
-        <Message>{(publish.error as ApiError).message}</Message>
+      <ScheduleViewTabs value={viewTab} onChange={setViewTab} />
+      {actionError && (
+        <Message>{(actionError as ApiError).message}</Message>
       )}
-      <Panel title="Kalendarz tygodnia">
-        {shifts.isPending ? (
-          <p className="subtle">Ładowanie grafiku…</p>
-        ) : shifts.isError ? (
-          <Message>Nie udało się pobrać grafiku.</Message>
-        ) : (
-          <div className="schedule-week">
-            {days.map((day) => {
-              const dayStart = day.getTime();
-              const dayEnd = addDays(day, 1).getTime();
-              const dayShifts = visible.filter((shift) => {
-                const start = new Date(shift.started_at).getTime();
-                const end = new Date(shift.ended_at).getTime();
-                return start < dayEnd && end > dayStart;
-              });
-              return (
-                <div className="schedule-day" key={day.toISOString()}>
-                  <div className="schedule-day-head">
-                    <strong>
-                      {day.toLocaleDateString("pl-PL", {
-                        weekday: "short",
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </strong>
-                    {canPlan && (
-                      <button
-                        className="icon-button"
-                        aria-label={`Dodaj zmianę ${day.toLocaleDateString("pl-PL")}`}
-                        onClick={() => openCreate(day)}
-                      >
-                        <Plus size={16} />
-                      </button>
-                    )}
-                  </div>
-                  {dayShifts.length ? (
-                    <div className="schedule-list">
-                      {dayShifts.map((shift) => (
-                        <div
-                          className={`schedule-card ${shift.published ? "published" : "draft"}`}
-                          key={shift.id}
-                        >
-                          {canPlan && !shift.published && (
-                            <label className="schedule-check">
-                              <input
-                                type="checkbox"
-                                checked={selected.includes(shift.id)}
-                                onChange={() => toggle(shift.id)}
-                              />
-                              <span className="sr-only">Zaznacz szkic</span>
-                            </label>
-                          )}
-                          <div>
-                            <strong>
-                              {canPlan
-                                ? nameOf(shift.employee_id)
-                                : "Twoja zmiana"}
-                            </strong>
-                            <small>
-                              {localTime(shift.started_at)}–
-                              {localTime(shift.ended_at)}
-                            </small>
-                          </div>
-                          <span
-                            className={`table-status ${shift.published ? "active" : "open"}`}
-                          >
-                            {shift.published ? "Opublikowany" : "Szkic"}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <button
-                      className="schedule-empty-btn"
-                      disabled={!canPlan}
-                      onClick={() => canPlan && openCreate(day)}
-                    >
-                      {canPlan ? "Dodaj zmianę" : "Brak zmian"}
-                    </button>
-                  )}
-                </div>
+      <div className="schedule-layout">
+        <div className="schedule-calendar">
+          <ScheduleMatrix
+            loading={
+              shifts.isPending || Boolean(canPlan && employees.isPending)
+            }
+            error={shifts.isError}
+            canPlan={canPlan}
+            viewTab={viewTab}
+            days={days}
+            employees={employeeRows}
+            visibleShifts={visibleShifts}
+            dayTypes={dayTypes.data}
+            availability={availability.data}
+            leaveRequests={visibleLeaves}
+            leaveTypes={leaveTypes.data || []}
+            selectedEmployeeIds={selectedEmployeeIds}
+            selectedCell={cell}
+            onToggleEmployee={(id) =>
+              setSelectedEmployeeIds((current) =>
+                current.includes(id)
+                  ? current.filter((item) => item !== id)
+                  : [...current, id],
+              )
+            }
+            onToggleAll={() => {
+              const allSelected =
+                employeeRows.length > 0 &&
+                employeeRows.every((row) =>
+                  selectedEmployeeIds.includes(row.id),
+                );
+              setSelectedEmployeeIds(
+                allSelected ? [] : employeeRows.map((row) => row.id),
               );
-            })}
-          </div>
-        )}
-        {!shifts.isPending && !visible.length && (
-          <Empty title="Brak przydziałów w tym tygodniu">
-            {canPlan
-              ? "Kliknij dzień lub „Dodaj zmianę”, aby otworzyć modal."
-              : "Gdy grafik zostanie opublikowany, zobaczysz go tutaj."}
-          </Empty>
-        )}
-      </Panel>
-      {modalOpen && canPlan && (
-        <Modal
-          title="Nowa zmiana"
-          description="Szkic trafi do kalendarza. Opublikuj go, aby był widoczny dla pracownika."
-          size="wide"
-          onClose={() => setModalOpen(false)}
-          footer={
-            <>
-              {create.isError && (
-                <Message>{(create.error as ApiError).message}</Message>
-              )}
-              <Button
-                type="button"
-                variant="quiet"
-                onClick={() => setModalOpen(false)}
-              >
-                Anuluj
-              </Button>
-              <Button
-                type="submit"
-                form="create-shift-form"
-                busy={create.isPending}
-              >
-                Zapisz szkic
-              </Button>
-            </>
-          }
-        >
-          <form
-            id="create-shift-form"
-            className="form-grid modal-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create.mutate();
             }}
-          >
-            <Field label="Pracownik">
-              <select
-                value={employeeId}
-                onChange={(event) => setEmployeeId(event.target.value)}
-                required
-              >
-                <option value="">Wybierz pracownika</option>
-                {employees.data?.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.first_name} {employee.last_name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Początek">
-              <input
-                type="datetime-local"
-                value={startedAt}
-                onChange={(event) => setStartedAt(event.target.value)}
-                required
-              />
-            </Field>
-            <Field label="Koniec">
-              <input
-                type="datetime-local"
-                value={endedAt}
-                onChange={(event) => setEndedAt(event.target.value)}
-                required
-              />
-            </Field>
-          </form>
-        </Modal>
+            onSelectCell={(employeeId, day) => setCell({ employeeId, day })}
+            onAddShift={(employeeId, day) => openCreate(employeeId, day)}
+            onAddLeave={(employeeId, day) => openLeave(employeeId, day)}
+          />
+        </div>
+        {cell && (
+          <ScheduleDayPanel
+            cell={cell}
+            canPlan={canPlan}
+            canEditAvailability={
+              Boolean(user.employee_id) &&
+              user.employee_id === cell.employeeId
+            }
+            employees={employeeRows}
+            visibleShifts={visibleShifts}
+            dayTypes={dayTypes.data}
+            availability={availability.data}
+            leaveRequests={visibleLeaves}
+            leaveTypes={leaveTypes.data || []}
+            activeNorm={activeNorm}
+            balances={cellBalances.data}
+            onClose={() => setCell(null)}
+            onPrevDay={() =>
+              setCell({
+                employeeId: cell.employeeId,
+                day: addDays(cell.day, -1),
+              })
+            }
+            onNextDay={() =>
+              setCell({
+                employeeId: cell.employeeId,
+                day: addDays(cell.day, 1),
+              })
+            }
+            onAvailability={(status) =>
+              mutations.putAvailability.mutate(status)
+            }
+            onDayType={(code) => mutations.putDayType.mutate(code)}
+            onAddShift={() => openCreate(cell.employeeId, cell.day)}
+            onEditShift={(shift) =>
+              openCreate(cell.employeeId, cell.day, shift)
+            }
+            onAddLeave={() => openLeave(cell.employeeId, cell.day)}
+          />
+        )}
+      </div>
+      {shiftForm && canPlan && (
+        <ShiftFormModal
+          key={`${shiftForm.edit_id || "new"}-${shiftForm.replaces_id || ""}-${shiftForm.day}`}
+          employees={employeeRows}
+          initial={shiftForm}
+          title={
+            shiftForm.edit_id
+              ? "Edytuj szkic"
+              : shiftForm.replaces_id
+                ? "Nowa wersja grafiku"
+                : "Dodaj grafik pracy"
+          }
+          busy={mutations.saveShift.isPending}
+          error={
+            mutations.saveShift.isError
+              ? (mutations.saveShift.error as ApiError).message
+              : null
+          }
+          onClose={() => setShiftForm(null)}
+          onSave={(values) => mutations.saveShift.mutate(values)}
+        />
       )}
-    </>
+      {bulkOpen && canPlan && (
+        <BulkWizard
+          employees={employeeRows}
+          fromDate={rangeStart}
+          toDate={parseDateKey(toKey)}
+          busy={mutations.bulk.isPending}
+          error={
+            mutations.bulk.isError
+              ? (mutations.bulk.error as ApiError).message
+              : null
+          }
+          onClose={() => setBulkOpen(false)}
+          onSubmit={(payload) => mutations.bulk.mutate(payload)}
+        />
+      )}
+      {leaveOpen && cell && (
+        <ScheduleLeaveModal
+          titleDescription={`${nameOf(employeeRows, cell.employeeId)} · ${toDateKey(cell.day)}`}
+          leaveTypes={leaveTypes.data || []}
+          leaveTypeId={leaveTypeId}
+          leaveReason={leaveReason}
+          busy={mutations.createLeave.isPending}
+          error={
+            mutations.createLeave.isError
+              ? (mutations.createLeave.error as ApiError).message
+              : null
+          }
+          onLeaveTypeId={setLeaveTypeId}
+          onLeaveReason={setLeaveReason}
+          onClose={() => setLeaveOpen(false)}
+          onSave={() => mutations.createLeave.mutate()}
+        />
+      )}
+    </div>
   );
 }

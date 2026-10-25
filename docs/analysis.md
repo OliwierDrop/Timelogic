@@ -1,6 +1,6 @@
 # Analiza referencji inEwi
 
-Stan: 2026-10-23. Zakres: autoryzowane konto testowe administratora z jedną widoczną kartą pracownika. Nie było zapisanych zdarzeń RCP ani wniosków w oglądanym miesiącu. Analiza była odczytowa: otwierano ekrany, filtry, menu i niedokończone formularze. Nie uruchomiono RCP ani niczego nie zapisano. Dane osobowe konta nie są utrwalane. TimeLogic ma własny kod, API i model danych.
+Stan: 2026-10-25 (uzupełnienie kalendarza). Zakres: autoryzowane konto testowe administratora. Analiza odczytowa: ekrany, filtry, menu i niedokończone formularze. Nie uruchomiono RCP ani niczego nie zapisano w iNewi. Dane osobowe konta nie są utrwalane. TimeLogic ma własny kod, API i model danych. Specyfikacja TimeLogic: [calendar-spec.md](calendar-spec.md).
 
 ## Rejestr dowodów
 
@@ -26,13 +26,28 @@ Klasy: **O** — zaobserwowane w koncie testowym, **P** — opisane publicznie, 
 | O16 | Ustawienia wniosków | Typy urlopowe, kadrowe i dowolne mają naliczanie dzienne, godzinowe lub elastyczne. Widać opcje ukrywania szczegółów, dwuetapowej akceptacji, korekt RCP i zamiany grafików. | O | Wysoka dla widoczności | [Wnioski](https://inewi.pl/app/ustawienia/organizacja/wnioski) |
 | O17 | Lokalizacje | Lista lokalizacji ma pola nazwy, miasta, adresu i tolerancji; na koncie jest pozycja domyślna z tolerancją 500 m. | O | Wysoka | [Lokalizacje](https://inewi.pl/app/lokalizacje) |
 | O18 | Urządzenia | Lista urządzeń była pusta; dostępne filtry statusu online/offline i systemu iOS/Android. | O | Wysoka | [Urządzenia](https://inewi.pl/app/urzadzenia) |
+| O19 | Panel dnia | Klik komórki otwiera prawy panel: pracownik, dostępność, typ dnia, norma godzinowa, grafiki, wnioski, historia, limity. | O | Wysoka | [Kalendarz](https://inewi.pl/app/kalendarz/_wszystko) 2026-10-25 |
+| O20 | Typy dnia | Widoczne kody: P (pracujący), ND (za niedzielę), ŚW (za święto), 5TP (pięciodniowy tydzień pracy), HW (harmonogramowo wolne). 5TP/ND nie są tożsame z sobotą/niedzielą kalendarzową. | O | Wysoka | Kalendarz 2026-10-25 |
+| O21 | Formularz grafiku | Pojedynczy grafik: dzień i pracownik przypisane; typy Normowany / Elastyczny / Dyżur; opcjonalna notatka. | O | Wysoka dla pól | Modal „Dodaj grafik pracy” 2026-10-25 |
+| O22 | Normowany | Godziny od–do, kolor, liczenie pracy przed/po, przerwa automatyczna, pilnowanie mienia, prace wzbronione młodocianym. | O | Wysoka dla pól | j.w. |
+| O23 | Elastyczny | Opcjonalny czas trwania oraz opcjonalne okno rozpoczęcia — inny układ niż normowany. | O | Wysoka dla pól | j.w. |
+| O24 | Dyżur | Opcjonalne godziny i rodzaj dyżuru; widoczna domyślna wartość „Zdalny”. | O | Wysoka dla pól | j.w. |
+| O25 | Przerwa auto | Po włączeniu: długość przerwy i przełącznik „Jako przerwa bezpłatna”. | O | Wysoka dla pól | j.w. |
+| O26 | Kreator zbiorczy | Trzy kroki: pracownicy → parametry grafiku → dni tygodnia i zakres dat; domyślnie pn–pt; opcje pomijania świąt i nadpisania istniejących. | O | Wysoka dla pól | „Kreator grafików pracy” 2026-10-25 |
+| O27 | Walidacja UI | Normowany bez godzin: komunikat „Czas wymagany” przy przejściu dalej. | O | Wysoka | Kreator 2026-10-25 |
+| O28 | Wniosek z dnia | Formularz z wybranym pracownikiem i datą komórki; opcje weekendów/świąt, autoakceptacji, przełożonego, załączników, notatki. | O | Wysoka dla pól | Kalendarz 2026-10-25 |
+| O29 | Menu Akcje | Odrzucenie nieopublikowanych, usuwanie grafików, kopiowanie do innej osoby, reset dostępności i dni wolnych. | O | Wysoka dla opcji | Kalendarz 2026-10-25 |
+| O30 | Import | Modal przyjmuje .xlsx, szablon i kolejny krok po wyborze pliku. Importu nie wykonano. | O | Wysoka dla UI | Kalendarz 2026-10-25 |
 | P01 | Role | Dokumentacja opisuje role i zakres dostępu. | P | Wysoka | [Pomoc: role](https://pomoc.inewi.pl/pl/article/role-inaczej-uprawnienia-1876rty/) |
 | P02 | RCP | Dokumentacja opisuje Start, Stop i przerwy. | P | Wysoka | [Pomoc: moduły](https://pomoc.inewi.pl/pl/article/oferowane-moduly-aplikacji-gdlwjj/) |
-| P03 | Grafiki | Dokumentacja opisuje przygotowanie i publikację grafiku. | P | Wysoka | [Pomoc: kalendarz](https://pomoc.inewi.pl/pl/article/modul-grafiki-pracy-kalendarz-p630i3/) |
+| P03 | Grafiki | Dokumentacja: przygotowanie, publikacja, hover ze skrótami, odrzucenie szkiców przywraca ostatnią opublikowaną, kopiowanie/przenoszenie przeciąganiem. | P | Wysoka | [Pomoc: kalendarz](https://pomoc.inewi.pl/pl/article/modul-grafiki-pracy-kalendarz-p630i3/) |
 | P04 | Wnioski | Dokumentacja opisuje składanie i rozpatrywanie wniosków. | P | Wysoka | [Pomoc: wnioski](https://pomoc.inewi.pl/pl/article/modul-wnioski-r2tzsc/) |
 | P05 | Raport | Dokumentacja opisuje raport ewidencji. | P | Wysoka | [Pomoc: raport](https://pomoc.inewi.pl/pl/article/raport-ewidencji-czasu-pracysumaryczny-pracy-modul-rcp-nn326b/) |
+| P06 | Dostępność | Osobna deklaracja: cały dzień, wybrane godziny lub niedostępność. | P | Wysoka | Pomoc: dostępność |
+| P07 | Typy dni | Oznaczenia dni wolnych mogą być sugestiami automatyzacji; 5TP ≠ sobota, ND ≠ musi być niedziela. | P | Wysoka | Pomoc: typy dni |
 | W01 | Model | Widoczne statusy i raporty sugerują oddzielenie zdarzeń RCP od obliczonej ewidencji, ale nie dowodzą modelu danych inEwi. | W | Średnia | O08, O10, O12 |
 | T01 | TimeLogic | Własny strumień zdarzeń z audytem i osobna wyliczana ewidencja dnia ze statusem kompletności. | T | Decyzja projektowa | [Projekt bazy](database-design.md) |
+| T02 | TimeLogic kalendarz | Siatka pracownik×dzień, szkic nadpisujący opublikowany (`replaces_id`), typy grafiku, panel dnia; bez importu xlsx i drag w pierwszej dostawie. | T | Decyzja projektowa | [Specyfikacja kalendarza](calendar-spec.md) |
 
 ## Wzorce interfejsu
 
@@ -46,7 +61,7 @@ Klasy: **O** — zaobserwowane w koncie testowym, **P** — opisane publicznie, 
 
 ## Ograniczenia i dalsze dowody
 
-Nie sprawdzono skutków zapisu, walidacji serwera, konfliktów, zakresu pozostałych ról ani widoków z większą ilością danych. Nie potwierdzono modelu bazy, kontraktów sieciowych i prywatnego API. Analiza dostępności i responsywności nie jest pełna.
+Nie sprawdzono skutków zapisu, edycji istniejących zmian, konfliktów, publikacji, historii, przeciągania ani działania innych ról. Nie potwierdzono modelu bazy, kontraktów sieciowych i prywatnego API. Analiza dostępności i responsywności nie jest pełna.
 
 REA 6.7.0 jest zarejestrowane w Codexie, lecz narzędzia MCP nie zostały załadowane w bieżącej sesji, więc użyto CLI. Za zgodą użytkownika pobrano Chromium for Testing 156.0.8078.4 do katalogu użytkownika i uruchomiono oddzielny profil z CDP dostępnym tylko na `127.0.0.1:9222`. Sesja wymagała osobnego logowania przez użytkownika. Nie kopiowano ciasteczek ani hasła z innej przeglądarki.
 

@@ -267,6 +267,40 @@ class ShiftAssignment(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    kind: Mapped[str] = mapped_column(String(20), default="standard")
+    color: Mapped[str | None] = mapped_column(String(20))
+    note: Mapped[str | None] = mapped_column(Text)
+    flags: Mapped[dict] = mapped_column(JSONB, default=dict)
+    replaces_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("shift_assignments.id"), index=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class CalendarDayType(Base):
+    __tablename__ = "calendar_day_types"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "day", name="uq_calendar_day_types_employee_day"),
+        CheckConstraint("code IN ('P', 'ND', 'SW', 'TP5', 'HW')", name="calendar_day_type_code"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), index=True)
+    day: Mapped[date] = mapped_column(Date)
+    code: Mapped[str] = mapped_column(String(10))
+
+
+class AvailabilityEntry(Base):
+    __tablename__ = "availability_entries"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "day", name="uq_availability_entries_employee_day"),
+        CheckConstraint("status IN ('available', 'hours', 'unavailable')", name="availability_status"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uid)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), index=True)
+    day: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="available")
+    start_minute: Mapped[int | None] = mapped_column(Integer)
+    end_minute: Mapped[int | None] = mapped_column(Integer)
 
 
 class LeaveType(Base):
