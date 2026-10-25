@@ -5,6 +5,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { isScheduleCellFullyVisible } from "./scheduleVisibility";
 
 const CLOSE_DELAY_MS = 50;
 
@@ -43,6 +44,10 @@ export function ScheduleCellActions({
 
     const show = () => {
       clearClose();
+      if (!isScheduleCellFullyVisible(cell)) {
+        setOpen(false);
+        return;
+      }
       const rect = cell.getBoundingClientRect();
       setPos({
         top: rect.bottom,

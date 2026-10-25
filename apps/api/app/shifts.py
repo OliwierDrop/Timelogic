@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .db import get_db
 from .models import (
+    AuditLog,
     AvailabilityEntry,
     CalendarDayType,
     Employee,
@@ -56,6 +57,10 @@ def can_plan(db: Session, user: User) -> bool:
     return bool(role_codes(db, user).intersection({"admin", "hr", "manager"}))
 
 
+def is_pending_delete(row: ShiftAssignment) -> bool:
+    return bool((row.flags or {}).get("pending_delete"))
+
+
 def shift_view(row: ShiftAssignment):
     return {
         "id": str(row.id),
@@ -72,6 +77,7 @@ def shift_view(row: ShiftAssignment):
         "replaces_id": str(row.replaces_id) if row.replaces_id else None,
         "superseded_at": row.superseded_at.isoformat() if row.superseded_at else None,
         "is_draft": row.published_at is None,
+        "pending_delete": is_pending_delete(row),
     }
 
 
@@ -286,6 +292,102 @@ def list_shifts(
     return [shift_view(x) for x in visible]
 
 
+HISTORY_ACTION_LABELS = {
+    "shift.create": "DODANO",
+    "shift.copy": "DODANO",
+    "shift.publish": "OPUBLIKOWANO",
+    "shift.update": "ZMIENIONO",
+    "shift.supersede": "ZMIENIONO",
+    "shift.delete": "USUNIĘTO",
+    "shift.pending_delete": "USUNIĘTO",
+    "shift.publish_delete": "USUNIĘTO",
+    "shift.reject_draft": "ODRZUCONO",
+}
+
+
+@router.get("/shifts/history")
+def shift_day_history(
+    employee_id: UUID,
+    day: date,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    require_role(db, user, "admin", "hr", "manager")
+    employee_or_404(db, user, employee_id, manage=True)
+    day_start = datetime.combine(day, time.min, tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+    rows = db.scalars(
+        select(ShiftAssignment).where(
+            ShiftAssignment.organization_id == user.organization_id,
+            ShiftAssignment.employee_id == employee_id,
+            ShiftAssignment.started_at < day_end,
+            ShiftAssignment.ended_at > day_start,
+        )
+    ).all()
+    by_id = {row.id: row for row in rows}
+    current_row = next(
+        (
+            row
+            for row in rows
+            if row.superseded_at is None and not is_pending_delete(row) and row.published_at is not None
+        ),
+        None,
+    )
+    if current_row is None:
+        current_row = next(
+            (row for row in rows if row.superseded_at is None and not is_pending_delete(row)),
+            None,
+        )
+
+    events: list[dict[str, Any]] = []
+    if by_id:
+        logs = db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.organization_id == user.organization_id,
+                AuditLog.target_type == "shift_assignment",
+                AuditLog.target_id.in_(list(by_id.keys())),
+            )
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+        ).all()
+        actor_ids = {log.actor_id for log in logs if log.actor_id}
+        actor_names: dict[UUID, str] = {}
+        if actor_ids:
+            actors = db.scalars(
+                select(Employee).where(
+                    Employee.organization_id == user.organization_id,
+                    Employee.user_id.in_(list(actor_ids)),
+                )
+            ).all()
+            for actor in actors:
+                if actor.user_id:
+                    actor_names[actor.user_id] = f"{actor.first_name} {actor.last_name}".strip()
+            missing = actor_ids - set(actor_names)
+            if missing:
+                for actor_user in db.scalars(select(User).where(User.id.in_(list(missing)))).all():
+                    actor_names[actor_user.id] = actor_user.email
+        for log in logs:
+            shift = by_id.get(log.target_id) if log.target_id else None
+            if not shift:
+                continue
+            events.append(
+                {
+                    "at": log.created_at.isoformat(),
+                    "actor_name": actor_names.get(log.actor_id, "—") if log.actor_id else "—",
+                    "action_label": HISTORY_ACTION_LABELS.get(log.action, log.action.upper()),
+                    "kind": shift.kind,
+                    "started_at": shift.started_at.isoformat(),
+                    "ended_at": shift.ended_at.isoformat(),
+                    "shift_id": str(shift.id),
+                }
+            )
+
+    return {
+        "current": shift_view(current_row) if current_row else None,
+        "events": events,
+    }
+
+
 class ShiftIn(BaseModel):
     employee_id: UUID
     started_at: datetime
@@ -421,6 +523,25 @@ def delete_shift(shift_id: UUID, user: User = Depends(current_user), db: Session
         )
         if draft:
             raise HTTPException(409, "Najpierw odrzuć szkic zastępujący")
+        flags = normalize_flags(row.flags)
+        flags["pending_delete"] = True
+        tombstone = ShiftAssignment(
+            organization_id=row.organization_id,
+            employee_id=row.employee_id,
+            template_id=row.template_id,
+            started_at=row.started_at,
+            ended_at=row.ended_at,
+            kind=row.kind,
+            color=row.color,
+            note=row.note,
+            flags=flags,
+            replaces_id=row.id,
+        )
+        db.add(tombstone)
+        db.flush()
+        audit(db, user, "shift.pending_delete", "shift_assignment", tombstone.id, {"replaces_id": str(row.id)})
+        db.commit()
+        return
     audit(db, user, "shift.delete", "shift_assignment", row.id)
     db.delete(row)
     db.commit()
@@ -441,8 +562,9 @@ def publish_shifts(data: PublishIn, user: User = Depends(current_user), db: Sess
         if row.published_at:
             published.append(shift_view(row))
             continue
+        pending_delete = is_pending_delete(row)
         exclude = {row.replaces_id} if row.replaces_id else set()
-        if overlaps(
+        if not pending_delete and overlaps(
             db,
             user.organization_id,
             row.employee_id,
@@ -461,6 +583,10 @@ def publish_shifts(data: PublishIn, user: User = Depends(current_user), db: Sess
             if target and target.superseded_at is None:
                 target.superseded_at = now()
                 audit(db, user, "shift.supersede", "shift_assignment", target.id)
+        if pending_delete:
+            audit(db, user, "shift.publish_delete", "shift_assignment", row.id, {"replaces_id": str(row.replaces_id)})
+            db.delete(row)
+            continue
         row.published_at = now()
         audit(db, user, "shift.publish", "shift_assignment", row.id)
         published.append(shift_view(row))

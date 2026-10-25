@@ -151,6 +151,74 @@ def test_shifts_replaces_publish_and_reject(seeded):
         assert published_id not in {row["id"] for row in old}
 
 
+def test_shifts_pending_delete_publish_and_reject(seeded):
+    start = datetime(2026, 12, 1, 8, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=8)
+    with TestClient(app) as admin:
+        csrf = login(admin, "admin@example.com")
+        created = admin.post(
+            "/api/v1/shifts",
+            json={
+                "employee_id": seeded["employee"],
+                "started_at": start.isoformat(),
+                "ended_at": end.isoformat(),
+                "color": "#3b82f6",
+            },
+            headers=csrf,
+        )
+        assert created.status_code == 201, created.text
+        published_id = created.json()["id"]
+        assert (
+            admin.post("/api/v1/shifts/publish", json={"shift_ids": [published_id]}, headers=csrf).status_code
+            == 200
+        )
+
+        deleted = admin.delete(f"/api/v1/shifts/{published_id}", headers=csrf)
+        assert deleted.status_code == 204, deleted.text
+
+        planner = admin.get("/api/v1/shifts?include_drafts=true").json()
+        tombstones = [row for row in planner if row.get("pending_delete")]
+        assert len(tombstones) == 1
+        tombstone = tombstones[0]
+        assert tombstone["replaces_id"] == published_id
+        assert tombstone["published"] is False
+        assert published_id not in {row["id"] for row in planner}
+
+        with TestClient(app) as worker:
+            login(worker, "worker@example.com")
+            visible = worker.get("/api/v1/shifts").json()
+            assert len(visible) == 1
+            assert visible[0]["id"] == published_id
+
+        rejected = admin.post(
+            "/api/v1/shifts/reject-drafts",
+            json={"shift_ids": [tombstone["id"]]},
+            headers=csrf,
+        )
+        assert rejected.status_code == 200, rejected.text
+        restored = admin.get("/api/v1/shifts?include_drafts=true").json()
+        assert {row["id"] for row in restored} == {published_id}
+
+        assert admin.delete(f"/api/v1/shifts/{published_id}", headers=csrf).status_code == 204
+        planner2 = admin.get("/api/v1/shifts?include_drafts=true").json()
+        tombstone2 = next(row for row in planner2 if row.get("pending_delete"))
+        pub = admin.post(
+            "/api/v1/shifts/publish",
+            json={"shift_ids": [tombstone2["id"]]},
+            headers=csrf,
+        )
+        assert pub.status_code == 200, pub.text
+
+        with TestClient(app) as worker:
+            login(worker, "worker@example.com")
+            visible = worker.get("/api/v1/shifts").json()
+            assert visible == []
+
+        final = admin.get("/api/v1/shifts?include_drafts=true").json()
+        assert published_id not in {row["id"] for row in final}
+        assert not any(row.get("pending_delete") for row in final)
+
+
 def test_shifts_bulk_and_day_type(seeded):
     with TestClient(app) as admin:
         csrf = login(admin, "admin@example.com")
@@ -223,3 +291,40 @@ def test_default_day_type_code():
     assert default_day_type_code(date(2026, 11, 6)) == "P"  # Fri
     assert default_day_type_code(date(2026, 11, 7)) == "TP5"  # Sat
     assert default_day_type_code(date(2026, 11, 8)) == "ND"  # Sun
+
+
+def test_shift_day_history_create_publish(seeded):
+    start = datetime(2026, 12, 1, 8, 0, tzinfo=timezone.utc)
+    end = start + timedelta(hours=8)
+    with TestClient(app) as admin:
+        csrf = login(admin, "admin@example.com")
+        draft = admin.post(
+            "/api/v1/shifts",
+            json={
+                "employee_id": seeded["employee"],
+                "started_at": start.isoformat(),
+                "ended_at": end.isoformat(),
+                "kind": "standard",
+            },
+            headers=csrf,
+        )
+        assert draft.status_code == 201, draft.text
+        shift_id = draft.json()["id"]
+        published = admin.post(
+            "/api/v1/shifts/publish",
+            json={"shift_ids": [shift_id]},
+            headers=csrf,
+        )
+        assert published.status_code == 200, published.text
+        history = admin.get(
+            f"/api/v1/shifts/history?employee_id={seeded['employee']}&day=2026-12-01",
+            headers=csrf,
+        )
+        assert history.status_code == 200, history.text
+        body = history.json()
+        assert body["current"] is not None
+        assert body["current"]["id"] == shift_id
+        labels = [event["action_label"] for event in body["events"]]
+        assert "DODANO" in labels
+        assert "OPUBLIKOWANO" in labels
+        assert all(event["actor_name"] for event in body["events"])

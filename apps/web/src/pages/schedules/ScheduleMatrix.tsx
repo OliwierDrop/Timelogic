@@ -20,12 +20,14 @@ import { roleLabel } from "../team/roles";
 import { DAY_TYPE_LABELS, KIND_LABELS, sameDay } from "./dateUtils";
 import { polishHolidayName } from "./polishHolidays";
 import { ScheduleCellActions } from "./ScheduleCellActions";
+import { ScheduleChipActions } from "./ScheduleChipActions";
 import { ScheduleTags } from "./ScheduleTags";
 import {
   availabilityClass,
   availabilityStatusOf,
   cellLeaves,
   cellShifts,
+  contrastInk,
   dayTypeOf,
   showAvailabilityInTab,
   showDayTypesInTab,
@@ -53,6 +55,8 @@ export function ScheduleMatrix({
   onSelectCell,
   onAddShift,
   onAddLeave,
+  onEditShift,
+  onDeleteShift,
 }: {
   loading: boolean;
   error: boolean;
@@ -72,6 +76,8 @@ export function ScheduleMatrix({
   onSelectCell: (employeeId: string, day: Date) => void;
   onAddShift: (employeeId: string, day: Date) => void;
   onAddLeave: (employeeId: string, day: Date) => void;
+  onEditShift: (shift: Shift, employeeId: string, day: Date) => void;
+  onDeleteShift: (shift: Shift) => void;
 }) {
   const showShifts = showShiftsInTab(viewTab);
   const showLeaves = showLeavesInTab(viewTab);
@@ -260,7 +266,17 @@ export function ScheduleMatrix({
           })}
           {employees.map((employee) => {
             const rowSelected = selectedEmployeeIds.includes(employee.id);
-            const rowClass = rowSelected ? " is-selected" : "";
+            const hasUnpublished = visibleShifts.some(
+              (shift) =>
+                shift.employee_id === employee.id && !shift.published,
+            );
+            const rowClass = [
+              rowSelected ? "is-selected" : "",
+              hasUnpublished ? "has-unpublished" : "",
+            ]
+              .filter(Boolean)
+              .map((cls) => ` ${cls}`)
+              .join("");
             return (
               <div key={employee.id} className="schedule-row" role="row">
                 <div
@@ -330,30 +346,66 @@ export function ScheduleMatrix({
                       role="gridcell"
                       onClick={() => onSelectCell(employee.id, day)}
                     >
-                      {marker && (
+                      {marker && items.length === 0 ? (
                         <span className="day-type-badge">
                           {DAY_TYPE_LABELS[marker.code] || marker.code}
                         </span>
-                      )}
-                      {items.map((shift) => (
-                        <div
-                          key={shift.id}
-                          className={`schedule-chip ${shift.published ? "published" : "draft"}`}
-                          style={
-                            shift.color
-                              ? { borderLeftColor: shift.color }
-                              : undefined
-                          }
-                        >
-                          <span>
-                            {KIND_LABELS[shift.kind] || shift.kind}
-                            <small>
-                              {localTime(shift.started_at)}–
-                              {localTime(shift.ended_at)}
-                            </small>
-                          </span>
-                        </div>
-                      ))}
+                      ) : null}
+                      {items.map((shift) => {
+                        const pendingDelete = Boolean(
+                          shift.pending_delete || shift.flags?.pending_delete,
+                        );
+                        const ink = contrastInk(shift.color);
+                        return (
+                          <div
+                            key={shift.id}
+                            className={[
+                              "schedule-chip",
+                              shift.published ? "published" : "draft",
+                              pendingDelete ? "pending-delete" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            style={
+                              shift.color
+                                ? {
+                                    backgroundColor: shift.color,
+                                    borderColor: shift.color,
+                                    color: ink,
+                                  }
+                                : undefined
+                            }
+                          >
+                            <span>
+                              <span
+                                className={
+                                  pendingDelete
+                                    ? "schedule-chip-time is-removed"
+                                    : "schedule-chip-time"
+                                }
+                              >
+                                {localTime(shift.started_at)}–
+                                {localTime(shift.ended_at)}
+                              </span>
+                              {shift.kind !== "standard" ? (
+                                <small>
+                                  {KIND_LABELS[shift.kind] || shift.kind}
+                                </small>
+                              ) : null}
+                              {pendingDelete ? <small>Usunięcie</small> : null}
+                            </span>
+                            {canPlan ? (
+                              <ScheduleChipActions
+                                showEdit={!pendingDelete}
+                                onEdit={() =>
+                                  onEditShift(shift, employee.id, day)
+                                }
+                                onDelete={() => onDeleteShift(shift)}
+                              />
+                            ) : null}
+                          </div>
+                        );
+                      })}
                       {leaves.map((leave) => (
                         <span
                           key={leave.id}

@@ -12,6 +12,23 @@ export function shiftsForTargets(list: Shift[], targetEmployeeIds: string[]) {
   return list.filter((shift) => targetEmployeeIds.includes(shift.employee_id));
 }
 
+export function contrastInk(hex: string | null | undefined) {
+  if (!hex || !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) return undefined;
+  const raw = hex.slice(1);
+  const full =
+    raw.length === 3
+      ? raw
+          .split("")
+          .map((ch) => ch + ch)
+          .join("")
+      : raw;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.62 ? "#0f172a" : "#ffffff";
+}
+
 export function cellShifts(
   visibleShifts: Shift[],
   employeeId: string,

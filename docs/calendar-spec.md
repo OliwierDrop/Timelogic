@@ -18,6 +18,8 @@ Własna semantyka TimeLogic inspirowana obserwacjami iNewi (O19–O30, P03, P06,
 
 - Pracownik widzi wyłącznie przydziały opublikowane i nie supersedowane.
 - Planner tworzy szkice (`published_at` puste). Edycja opublikowanego = nowy szkic z `replaces_id` wskazującym poprzednią wersję.
+- Usunięcie opublikowanego = szkic z `replaces_id` i `flags.pending_delete`; publikacja superseduje oryginał i usuwa tombstone. Odrzucenie szkicu przywraca opublikowany.
+- Usunięcie szkicu (w tym tombstone) = hard-delete.
 - Publikacja zatwierdza szkice i ustawia `superseded_at` na zastąpionych wierszach.
 - Odrzucenie szkiców usuwa je; ostatnia opublikowana wersja wraca do widoku.
 

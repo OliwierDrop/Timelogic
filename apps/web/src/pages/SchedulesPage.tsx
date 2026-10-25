@@ -30,15 +30,14 @@ import {
   startOfWeek,
   toDateKey,
 } from "./schedules/dateUtils";
+import { LeaveWizard } from "./schedules/LeaveWizard";
 import { ScheduleDayPanel } from "./schedules/ScheduleDayPanel";
 import { ScheduleFilters } from "./schedules/ScheduleFilters";
 import { ScheduleHeadingActions } from "./schedules/ScheduleHeadingActions";
-import { ScheduleLeaveModal } from "./schedules/ScheduleLeaveModal";
 import { ScheduleMatrix } from "./schedules/ScheduleMatrix";
 import { ScheduleViewTabs } from "./schedules/ScheduleViewTabs";
 import {
   leavesInRange,
-  nameOf,
   selectedEmployeesLabel,
 } from "./schedules/scheduleLookups";
 import type { ScheduleViewTab } from "./schedules/scheduleViewTab";
@@ -75,8 +74,11 @@ export function SchedulesPage() {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [copyTarget, setCopyTarget] = useState("");
   const [leaveOpen, setLeaveOpen] = useState(false);
-  const [leaveTypeId, setLeaveTypeId] = useState("");
-  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveSeed, setLeaveSeed] = useState<{
+    employeeIds: string[];
+    startDate?: string;
+    endDate?: string;
+  }>({ employeeIds: [] });
 
   const rangeStart =
     mode === "week"
@@ -214,10 +216,11 @@ export function SchedulesPage() {
     targetEmployeeIds,
     visibleShifts,
     copyTarget,
-    leaveTypeId,
-    leaveReason,
     onSavedShift: () => setShiftForm(null),
-    onBulkDone: () => setBulkOpen(false),
+    onBulkDone: (employeeIds) => {
+      setBulkOpen(false);
+      setSelectedEmployeeIds(employeeIds);
+    },
     onActionsDone: () => setActionsOpen(false),
     onCopyDone: () => {
       setActionsOpen(false);
@@ -225,7 +228,7 @@ export function SchedulesPage() {
     },
     onLeaveDone: () => {
       setLeaveOpen(false);
-      setLeaveReason("");
+      setLeaveSeed({ employeeIds: [] });
     },
   });
 
@@ -234,9 +237,17 @@ export function SchedulesPage() {
     else setShiftForm(defaultShiftValues(employeeId, day));
   };
 
-  const openLeave = (employeeId: string, day: Date) => {
-    setCell({ employeeId, day });
-    setLeaveTypeId(leaveTypes.data?.[0]?.id || "");
+  const openLeave = (employeeId?: string, day?: Date) => {
+    const key = day ? toDateKey(day) : undefined;
+    setLeaveSeed({
+      employeeIds: employeeId
+        ? [employeeId]
+        : selectedEmployeeIds.length
+          ? selectedEmployeeIds
+          : [],
+      startDate: key,
+      endDate: key,
+    });
     setLeaveOpen(true);
   };
 
@@ -366,14 +377,7 @@ export function SchedulesPage() {
               onCopy={() => mutations.copy.mutate()}
               onResetDayTypes={() => mutations.resetDayTypes.mutate()}
               onOpenBulk={() => setBulkOpen(true)}
-              onAddShift={() =>
-                openCreate(employeeRows[0]?.id || "", days[0] || new Date())
-              }
-              onAddLeave={() => {
-                const employeeId =
-                  selectedEmployeeIds[0] || employeeRows[0]?.id || "";
-                openLeave(employeeId, days[0] || new Date());
-              }}
+              onAddLeave={() => openLeave()}
             />
           ) : undefined
         }
@@ -420,6 +424,10 @@ export function SchedulesPage() {
             onSelectCell={(employeeId, day) => setCell({ employeeId, day })}
             onAddShift={(employeeId, day) => openCreate(employeeId, day)}
             onAddLeave={(employeeId, day) => openLeave(employeeId, day)}
+            onEditShift={(shift, employeeId, day) =>
+              openCreate(employeeId, day, shift)
+            }
+            onDeleteShift={(shift) => mutations.deleteShift.mutate(shift.id)}
           />
         </div>
         {cell && (
@@ -459,6 +467,7 @@ export function SchedulesPage() {
             onEditShift={(shift) =>
               openCreate(cell.employeeId, cell.day, shift)
             }
+            onDeleteShift={(shift) => mutations.deleteShift.mutate(shift.id)}
             onAddLeave={() => openLeave(cell.employeeId, cell.day)}
           />
         )}
@@ -487,7 +496,11 @@ export function SchedulesPage() {
       )}
       {bulkOpen && canPlan && (
         <BulkWizard
-          employees={employeeRows}
+          key={`bulk-${selectedEmployeeIds.join(",")}`}
+          employees={employees.data || []}
+          tags={tags.data || []}
+          positions={positions.data || []}
+          seedEmployeeIds={selectedEmployeeIds}
           fromDate={rangeStart}
           toDate={parseDateKey(toKey)}
           busy={mutations.bulk.isPending}
@@ -500,22 +513,27 @@ export function SchedulesPage() {
           onSubmit={(payload) => mutations.bulk.mutate(payload)}
         />
       )}
-      {leaveOpen && cell && (
-        <ScheduleLeaveModal
-          titleDescription={`${nameOf(employeeRows, cell.employeeId)} · ${toDateKey(cell.day)}`}
+      {leaveOpen && canPlan && (
+        <LeaveWizard
+          key={`leave-${leaveSeed.employeeIds.join(",")}-${leaveSeed.startDate || ""}`}
+          employees={employees.data || []}
+          tags={tags.data || []}
+          positions={positions.data || []}
           leaveTypes={leaveTypes.data || []}
-          leaveTypeId={leaveTypeId}
-          leaveReason={leaveReason}
+          seedEmployeeIds={leaveSeed.employeeIds}
+          seedStartDate={leaveSeed.startDate}
+          seedEndDate={leaveSeed.endDate}
           busy={mutations.createLeave.isPending}
           error={
             mutations.createLeave.isError
               ? (mutations.createLeave.error as ApiError).message
               : null
           }
-          onLeaveTypeId={setLeaveTypeId}
-          onLeaveReason={setLeaveReason}
-          onClose={() => setLeaveOpen(false)}
-          onSave={() => mutations.createLeave.mutate()}
+          onClose={() => {
+            setLeaveOpen(false);
+            setLeaveSeed({ employeeIds: [] });
+          }}
+          onSubmit={(payload) => mutations.createLeave.mutate(payload)}
         />
       )}
     </div>

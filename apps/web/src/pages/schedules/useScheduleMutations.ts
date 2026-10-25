@@ -30,8 +30,6 @@ export function useScheduleMutations({
   targetEmployeeIds,
   visibleShifts,
   copyTarget,
-  leaveTypeId,
-  leaveReason,
   onSavedShift,
   onBulkDone,
   onActionsDone,
@@ -47,10 +45,8 @@ export function useScheduleMutations({
   targetEmployeeIds: string[];
   visibleShifts: Shift[];
   copyTarget: string;
-  leaveTypeId: string;
-  leaveReason: string;
   onSavedShift: () => void;
-  onBulkDone: () => void;
+  onBulkDone: (employeeIds: string[]) => void;
   onActionsDone: () => void;
   onCopyDone: () => void;
   onLeaveDone: () => void;
@@ -125,11 +121,21 @@ export function useScheduleMutations({
     },
   });
 
+  const deleteShift = useMutation({
+    mutationFn: (shiftId: string) => del(`/shifts/${shiftId}`),
+    onSuccess: () => {
+      invalidate();
+    },
+  });
+
   const bulk = useMutation({
     mutationFn: (payload: BulkPayload) =>
-      post<{ count: number }>("/shifts/bulk", payload),
-    onSuccess: () => {
-      onBulkDone();
+      post<{ count: number }>("/shifts/bulk", payload).then((result) => ({
+        result,
+        employeeIds: payload.employee_ids,
+      })),
+    onSuccess: ({ employeeIds }) => {
+      onBulkDone(employeeIds);
       invalidate();
     },
   });
@@ -197,14 +203,27 @@ export function useScheduleMutations({
   });
 
   const createLeave = useMutation({
-    mutationFn: () =>
-      post<LeaveRequest>("/leave-requests", {
-        employee_id: cell?.employeeId,
-        leave_type_id: leaveTypeId,
-        start_date: cell ? toDateKey(cell.day) : "",
-        end_date: cell ? toDateKey(cell.day) : "",
-        reason: leaveReason || null,
-      }),
+    mutationFn: async (payload: {
+      employee_ids: string[];
+      leave_type_id: string;
+      start_date: string;
+      end_date: string;
+      reason: string | null;
+    }) => {
+      const results: LeaveRequest[] = [];
+      for (const employeeId of payload.employee_ids) {
+        results.push(
+          await post<LeaveRequest>("/leave-requests", {
+            employee_id: employeeId,
+            leave_type_id: payload.leave_type_id,
+            start_date: payload.start_date,
+            end_date: payload.end_date,
+            reason: payload.reason,
+          }),
+        );
+      }
+      return results;
+    },
     onSuccess: () => {
       onLeaveDone();
       client.invalidateQueries({ queryKey: ["leave-requests"] });
@@ -217,6 +236,7 @@ export function useScheduleMutations({
     publish,
     rejectDrafts,
     deleteShifts,
+    deleteShift,
     bulk,
     copy,
     putDayType,

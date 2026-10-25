@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Clock, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import {
   localTime,
   type AvailabilityEntry,
@@ -10,14 +11,17 @@ import {
   type LeaveType,
   type Shift,
 } from "../../api";
-import { KIND_LABELS } from "./dateUtils";
+import { Button } from "../../components";
+import { toDateKey } from "./dateUtils";
 import {
   availabilityStatusOf,
   cellLeaves,
   cellShifts,
+  contrastInk,
   dayTypeOf,
 } from "./scheduleLookups";
 import { ScheduleTags } from "./ScheduleTags";
+import { ShiftHistoryModal } from "./ShiftHistoryModal";
 import { roleLabel } from "../team/roles";
 
 const AVAIL_LABELS: Record<AvailabilityEntry["status"], string> = {
@@ -25,6 +29,143 @@ const AVAIL_LABELS: Record<AvailabilityEntry["status"], string> = {
   hours: "Wybrane godziny",
   unavailable: "Niedostępny",
 };
+
+function shiftDurationLabel(shift: Shift) {
+  const start = new Date(shift.started_at).getTime();
+  const end = new Date(shift.ended_at).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return "—";
+  }
+  const hours = Math.round((end - start) / 3_600_000);
+  return `${hours}h`;
+}
+
+function plannedMinutes(shifts: Shift[]) {
+  return shifts.reduce((sum, shift) => {
+    if (shift.pending_delete || shift.flags?.pending_delete) return sum;
+    const start = new Date(shift.started_at).getTime();
+    const end = new Date(shift.ended_at).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      return sum;
+    }
+    return sum + (end - start) / 60_000;
+  }, 0);
+}
+
+function DayShiftChip({
+  shift,
+  canPlan,
+  onEdit,
+  onDelete,
+}: {
+  shift: Shift;
+  canPlan: boolean;
+  onEdit: (shift: Shift) => void;
+  onDelete: (shift: Shift) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const pendingDelete = Boolean(
+    shift.pending_delete || shift.flags?.pending_delete,
+  );
+  const ink = contrastInk(shift.color);
+  const editable = canPlan && !pendingDelete;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (event: MouseEvent) => {
+      if (
+        menuRef.current &&
+        event.target instanceof Node &&
+        !menuRef.current.contains(event.target)
+      ) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
+
+  return (
+    <li
+      className={[
+        "day-shift-chip",
+        shift.published ? "published" : "draft",
+        pendingDelete ? "pending-delete" : "",
+        editable ? "is-editable" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={
+        shift.color
+          ? {
+              backgroundColor: shift.color,
+              borderColor: shift.color,
+              color: ink,
+            }
+          : undefined
+      }
+    >
+      <button
+        type="button"
+        className="day-shift-chip-main"
+        disabled={!editable}
+        onClick={() => editable && onEdit(shift)}
+        aria-label={
+          editable
+            ? shift.published
+              ? "Edytuj grafik (nowa wersja)"
+              : "Edytuj grafik"
+            : undefined
+        }
+      >
+        <span
+          className={`day-shift-check${shift.published ? " is-checked" : ""}`}
+          aria-hidden
+        />
+        <span className="day-shift-times">
+          <span className="day-shift-pill">{localTime(shift.started_at)}</span>
+          <span className="day-shift-arrow" aria-hidden>
+            →
+          </span>
+          <span className="day-shift-pill">{localTime(shift.ended_at)}</span>
+        </span>
+        <span className="day-shift-duration">{shiftDurationLabel(shift)}</span>
+      </button>
+      {canPlan ? (
+        <div className="day-shift-kebab" ref={menuRef}>
+          <button
+            type="button"
+            className="day-shift-kebab-btn"
+            aria-label="Akcje grafiku"
+            aria-expanded={menuOpen}
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen((open) => !open);
+            }}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {menuOpen ? (
+            <div className="day-shift-kebab-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onDelete(shift);
+                }}
+              >
+                <Trash2 size={14} />
+                Usuń
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
 
 export function ScheduleDayPanel({
   cell,
@@ -45,6 +186,7 @@ export function ScheduleDayPanel({
   onDayType,
   onAddShift,
   onEditShift,
+  onDeleteShift,
   onAddLeave,
 }: {
   cell: { employeeId: string; day: Date };
@@ -65,9 +207,11 @@ export function ScheduleDayPanel({
   onDayType: (code: CalendarDayType["code"]) => void;
   onAddShift: () => void;
   onEditShift: (shift: Shift) => void;
+  onDeleteShift: (shift: Shift) => void;
   onAddLeave: () => void;
 }) {
   const [limitsOpen, setLimitsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const employee = employees.find((row) => row.id === cell.employeeId);
   const shifts = cellShifts(visibleShifts, cell.employeeId, cell.day);
   const leaves = cellLeaves(leaveRequests, cell.employeeId, cell.day);
@@ -85,6 +229,8 @@ export function ScheduleDayPanel({
   const fullName = employee
     ? `${employee.first_name} ${employee.last_name}`
     : cell.employeeId.slice(0, 8);
+  const plannedHours = Math.round(plannedMinutes(shifts) / 60);
+  const dayKey = toDateKey(cell.day);
 
   return (
     <aside
@@ -209,36 +355,39 @@ export function ScheduleDayPanel({
             </strong>
           </div>
           {shifts.length > 0 ? (
-            <ul className="day-shift-list">
+            <ul className="day-shift-chips">
               {shifts.map((shift) => (
-                <li key={shift.id}>
-                  <strong>{KIND_LABELS[shift.kind]}</strong>
-                  <span>
-                    {localTime(shift.started_at)}–{localTime(shift.ended_at)}
-                  </span>
-                  <span
-                    className={`table-status ${shift.published ? "active" : "open"}`}
-                  >
-                    {shift.published ? "Opublikowany" : "Szkic"}
-                  </span>
-                  {canPlan && (
-                    <button
-                      type="button"
-                      className="text-button"
-                      onClick={() => onEditShift(shift)}
-                    >
-                      {shift.published ? "Nowa wersja" : "Edytuj"}
-                    </button>
-                  )}
-                </li>
+                <DayShiftChip
+                  key={shift.id}
+                  shift={shift}
+                  canPlan={canPlan}
+                  onEdit={onEditShift}
+                  onDelete={onDeleteShift}
+                />
               ))}
             </ul>
           ) : null}
-          {canPlan && (
-            <button type="button" className="text-button" onClick={onAddShift}>
-              + Dodaj grafik pracy
-            </button>
-          )}
+          <div className="schedule-day-norm-row">
+            <span>Zaplanowany czas</span>
+            <strong>{`${plannedHours}h`}</strong>
+          </div>
+          {canPlan ? (
+            <div className="schedule-day-shift-actions">
+              <Button type="button" variant="quiet" size="small" onClick={onAddShift}>
+                <Plus size={14} />
+                Dodaj grafik pracy
+              </Button>
+              <Button
+                type="button"
+                variant="quiet"
+                size="small"
+                onClick={() => setHistoryOpen(true)}
+              >
+                <Clock size={14} aria-hidden />
+                Pokaż historię
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <div className="schedule-day-panel-section">
@@ -257,11 +406,12 @@ export function ScheduleDayPanel({
               ))}
             </ul>
           ) : null}
-          {canPlan && (
-            <button type="button" className="text-button" onClick={onAddLeave}>
-              + Dodaj wniosek
-            </button>
-          )}
+          {canPlan ? (
+            <Button type="button" variant="quiet" size="small" onClick={onAddLeave}>
+              <Plus size={14} />
+              Dodaj wniosek
+            </Button>
+          ) : null}
         </div>
 
         {balances && balances.length > 0 ? (
@@ -308,6 +458,13 @@ export function ScheduleDayPanel({
           </div>
         ) : null}
       </div>
+      {historyOpen ? (
+        <ShiftHistoryModal
+          employeeId={cell.employeeId}
+          dayKey={dayKey}
+          onClose={() => setHistoryOpen(false)}
+        />
+      ) : null}
     </aside>
   );
 }

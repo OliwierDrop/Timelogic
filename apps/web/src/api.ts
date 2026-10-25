@@ -118,6 +118,7 @@ export type ShiftFlags = {
   on_call_type?: string;
   flexible_window_start?: string;
   flexible_duration_minutes?: number;
+  pending_delete?: boolean;
 };
 export type Shift = {
   id: string;
@@ -134,6 +135,20 @@ export type Shift = {
   replaces_id: string | null;
   superseded_at: string | null;
   is_draft: boolean;
+  pending_delete?: boolean;
+};
+export type ShiftHistoryEvent = {
+  at: string;
+  actor_name: string;
+  action_label: string;
+  kind: ShiftKind;
+  started_at: string;
+  ended_at: string;
+  shift_id: string;
+};
+export type ShiftDayHistory = {
+  current: Shift | null;
+  events: ShiftHistoryEvent[];
 };
 export type CalendarDayType = {
   id: string;
